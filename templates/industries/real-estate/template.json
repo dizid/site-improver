@@ -1,0 +1,57 @@
+{
+  "id": "real-estate",
+  "name": "Real Estate",
+  "keywords": ["real estate", "realtor", "realty", "homes", "houses", "property", "properties", "buying", "selling", "listings", "mls", "broker", "agent", "mortgage", "condo", "apartment", "commercial"],
+  
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+  
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Find Your Dream Home Today",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Expert guidance through every step of your real estate journey",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "View Listings"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Services"
+    },
+    "why_us_headline": {
+      "source": null,
+      "fallback": "Why Work With Us"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+  
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#0d9488",
+      "secondary": "#059669",
+      "accent": "#f97316"
+    }
+  }
+}

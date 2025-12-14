@@ -1,0 +1,52 @@
+{
+  "id": "restaurant",
+  "name": "Restaurant",
+  "keywords": ["restaurant", "cafe", "bistro", "diner", "grill", "bar", "pub", "pizza", "sushi", "mexican", "italian", "chinese", "thai", "indian", "food", "dining", "menu", "catering", "takeout", "delivery"],
+  
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+  
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Delicious Food, Memorable Experience",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Fresh ingredients, authentic flavors, and warm hospitality",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "View Our Menu"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Menu"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+  
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#ea580c",
+      "secondary": "#dc2626",
+      "accent": "#fbbf24"
+    }
+  }
+}

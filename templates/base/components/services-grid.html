@@ -1,0 +1,20 @@
+<!-- Services: Soft shadow cards with friendly icons -->
+<section id="services" class="services-section">
+  <div class="container">
+    <h2>{{services_headline}}</h2>
+    <p class="section-subtitle">Here's how we can help you today</p>
+
+    <!-- Service cards with soft shadows -->
+    <div class="services-grid">
+      {{#each services}}
+        <div class="service-card">
+          <span class="service-icon">{{#if this.icon}}{{this.icon}}{{else}}✨{{/if}}</span>
+          <h3>{{#if this.name}}{{this.name}}{{else}}{{this}}{{/if}}</h3>
+          {{#if this.description}}
+          <p>{{this.description}}</p>
+          {{/if}}
+        </div>
+      {{/each}}
+    </div>
+  </div>
+</section>

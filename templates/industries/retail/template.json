@@ -1,0 +1,52 @@
+{
+  "id": "retail",
+  "name": "Retail",
+  "keywords": ["shop", "store", "boutique", "retail", "products", "merchandise", "shopping", "buy", "sale", "discount", "clothing", "fashion", "jewelry", "gifts", "furniture", "electronics", "sporting goods"],
+  
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+  
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Quality Products, Exceptional Service",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Discover our curated selection of products",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Shop Now"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Products"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+  
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#9333ea",
+      "secondary": "#c026d3",
+      "accent": "#f97316"
+    }
+  }
+}

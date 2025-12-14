@@ -1,0 +1,57 @@
+{
+  "id": "home-services",
+  "name": "Home Services",
+  "keywords": ["plumber", "plumbing", "hvac", "electrician", "roofing", "contractor", "handyman", "repair", "installation", "heating", "cooling", "air conditioning", "drain", "pipe", "electrical", "roof", "gutter", "siding", "painting", "remodel"],
+  
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+  
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Professional {{industry}} Services You Can Trust",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Serving your area with quality workmanship and reliable service",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Get a Free Quote"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Services"
+    },
+    "why_us_headline": {
+      "source": null,
+      "fallback": "Why Choose Us"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+  
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#f97316",
+      "secondary": "#059669",
+      "accent": "#fbbf24"
+    }
+  }
+}

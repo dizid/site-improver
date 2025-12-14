@@ -1,0 +1,63 @@
+<!-- Footer: Warm & welcoming with business hours -->
+<footer class="site-footer">
+  <div class="container">
+    <!-- Footer content grid -->
+    <div class="footer-content">
+      <!-- Brand section -->
+      <div class="footer-brand">
+        <span class="logo-text">{{businessName}}</span>
+        <p>Thank you for considering us. We look forward to serving you!</p>
+      </div>
+
+      <!-- Business hours section -->
+      <div class="footer-hours">
+        <h4>Hours</h4>
+        {{#if hours}}
+        <p>{{hours}}</p>
+        {{else}}
+        <p>Mon - Fri: 8am - 6pm</p>
+        <p>Sat: 9am - 4pm</p>
+        <p>Sun: Closed</p>
+        {{/if}}
+      </div>
+
+      <!-- Contact info section -->
+      <div class="footer-contact">
+        <h4>Contact</h4>
+        {{#if phone}}
+        <p>{{phone}}</p>
+        {{/if}}
+        {{#if email}}
+        <p>{{email}}</p>
+        {{/if}}
+        {{#if address}}
+        <p>{{address}}</p>
+        {{/if}}
+      </div>
+    </div>
+
+    <!-- Footer bottom with links -->
+    <div class="footer-bottom">
+      <p>&copy; {{year}} {{businessName}}. All rights reserved.</p>
+
+      <nav class="footer-links">
+        <a href="#services">Services</a>
+        <a href="#about">About</a>
+        <a href="#contact">Contact</a>
+      </nav>
+
+      {{#if socialLinks}}
+      <div class="social-links">
+        {{#each socialLinks}}
+          <a href="{{this}}" target="_blank" rel="noopener noreferrer">
+            {{#if (includes this 'facebook')}}FB{{/if}}
+            {{#if (includes this 'instagram')}}IG{{/if}}
+            {{#if (includes this 'twitter')}}X{{/if}}
+            {{#if (includes this 'linkedin')}}LI{{/if}}
+          </a>
+        {{/each}}
+      </div>
+      {{/if}}
+    </div>
+  </div>
+</footer>

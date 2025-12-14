@@ -1,0 +1,32 @@
+<!-- Header: Rounded navbar with pill-shaped CTA -->
+<header class="site-header">
+  <div class="container">
+    <!-- Logo with optional image -->
+    <a href="/" class="logo">
+      {{#if logo}}
+        <img src="{{logo}}" alt="{{businessName}}">
+      {{else}}
+        <span class="logo-text">{{businessName}}</span>
+      {{/if}}
+    </a>
+
+    <!-- Main navigation with rounded hover states -->
+    <nav class="main-nav">
+      <a href="#services">Services</a>
+      <a href="#about">About Us</a>
+      <a href="#testimonials">Reviews</a>
+      <a href="#contact">Contact</a>
+    </nav>
+
+    <!-- Pill-shaped phone CTA -->
+    {{#if phone}}
+    <a href="tel:{{phone}}" class="header-cta">
+      Call Us: {{phone}}
+    </a>
+    {{else}}
+    <a href="#contact" class="header-cta">
+      Get in Touch
+    </a>
+    {{/if}}
+  </div>
+</header>

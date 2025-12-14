@@ -1,0 +1,578 @@
+// src/templateBuilder.js
+import Handlebars from 'handlebars';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import logger from './logger.js';
+
+const log = logger.child('templateBuilder');
+
+// Handle both ESM and bundled CJS environments
+const __dirname = import.meta.url
+  ? path.dirname(fileURLToPath(import.meta.url))
+  : process.cwd();
+
+export class TemplateBuilder {
+  constructor(templatesDir = null) {
+    this.templatesDir = templatesDir || path.join(__dirname, '../templates');
+    this.components = {};
+    this.industryConfigs = {};
+    this.initialized = false;
+  }
+
+  async init() {
+    if (this.initialized) return;
+
+    // Register Handlebars helpers
+    Handlebars.registerHelper('if', function(conditional, options) {
+      if (conditional) {
+        return options.fn(this);
+      }
+      return options.inverse(this);
+    });
+
+    // Load all components
+    const componentsDir = path.join(this.templatesDir, 'base/components');
+    try {
+      const files = await fs.readdir(componentsDir);
+
+      for (const file of files) {
+        if (!file.endsWith('.html')) continue;
+        const name = file.replace('.html', '');
+        const content = await fs.readFile(path.join(componentsDir, file), 'utf-8');
+        this.components[name] = Handlebars.compile(content);
+      }
+    } catch (error) {
+      log.warn('Could not load components', { error: error.message });
+    }
+
+    // Load industry configs
+    const industriesDir = path.join(this.templatesDir, 'industries');
+    try {
+      const industries = await fs.readdir(industriesDir);
+
+      for (const industry of industries) {
+        const configPath = path.join(industriesDir, industry, 'template.json');
+        try {
+          const config = JSON.parse(await fs.readFile(configPath, 'utf-8'));
+          this.industryConfigs[industry] = config;
+        } catch (error) {
+          log.debug(`Skipping industry ${industry} - no config or invalid JSON`);
+        }
+      }
+    } catch (error) {
+      log.warn('Could not load industry configs', { error: error.message });
+    }
+
+    this.initialized = true;
+  }
+
+  detectIndustry(siteData) {
+    const text = [
+      siteData.businessName || '',
+      ...(siteData.headlines || []),
+      ...(siteData.paragraphs || []),
+      siteData.title || '',
+      siteData.description || ''
+    ].join(' ').toLowerCase();
+
+    let bestMatch = { industry: 'general', score: 0 };
+
+    for (const [industry, config] of Object.entries(this.industryConfigs)) {
+      const matches = (config.keywords || []).filter(kw => text.includes(kw.toLowerCase()));
+      if (matches.length > bestMatch.score) {
+        bestMatch = { industry, score: matches.length };
+      }
+    }
+
+    return bestMatch.industry;
+  }
+
+  mapSlots(siteData, config) {
+    const mapped = {};
+    const slots = config.slots || {};
+
+    for (const [slotName, slotConfig] of Object.entries(slots)) {
+      let value = null;
+
+      // Try to get from source path
+      if (slotConfig.source) {
+        value = this.getByPath(siteData, slotConfig.source);
+      }
+
+      // Apply fallback if needed
+      if (!value || (Array.isArray(value) && value.length === 0)) {
+        value = this.interpolateFallback(slotConfig.fallback, siteData);
+      }
+
+      // Truncate if needed
+      if (slotConfig.maxLength && typeof value === 'string') {
+        value = value.slice(0, slotConfig.maxLength);
+      }
+
+      mapped[slotName] = value;
+      mapped[`${slotName}_aiEnhance`] = slotConfig.aiEnhance || false;
+    }
+
+    return mapped;
+  }
+
+  getByPath(obj, pathStr) {
+    if (!pathStr) return null;
+    // Handle paths like "headlines[0]" or "images[0].src"
+    const parts = pathStr.match(/[^.\[\]]+/g);
+    let current = obj;
+
+    for (const part of parts) {
+      if (current === null || current === undefined) return null;
+      current = current[part];
+    }
+
+    return current;
+  }
+
+  interpolateFallback(fallback, data) {
+    if (typeof fallback !== 'string') return fallback;
+
+    return fallback.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+      return data[key] || key;
+    });
+  }
+
+  generateCSS(colors, config) {
+    const colorMapping = config.colorMapping || {};
+    const fallback = colorMapping.fallback || {
+      primary: '#1e40af',
+      secondary: '#3b82f6',
+      accent: '#f97316'
+    };
+
+    const palette = {};
+    for (const [name, source] of Object.entries(colorMapping)) {
+      if (name === 'fallback') continue;
+      palette[name] = this.getByPath({ colors }, source) || fallback[name];
+    }
+
+    // Ensure we have all colors
+    palette.primary = palette.primary || fallback.primary;
+    palette.secondary = palette.secondary || fallback.secondary;
+    palette.accent = palette.accent || fallback.accent;
+
+    return `
+      :root {
+        --color-primary: ${palette.primary};
+        --color-secondary: ${palette.secondary};
+        --color-accent: ${palette.accent};
+        --color-text: #1f2937;
+        --color-text-light: #6b7280;
+        --color-background: #ffffff;
+        --color-surface: #f9fafb;
+      }
+    `;
+  }
+
+  async build(siteData) {
+    await this.init();
+
+    const industry = this.detectIndustry(siteData);
+    const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
+    const slots = this.mapSlots(siteData, config);
+
+    // Build HTML from sections
+    const sections = (config.sections || []).map(section => {
+      const component = this.components[section];
+      if (!component) return '';
+      try {
+        return component({ ...siteData, ...slots });
+      } catch (error) {
+        log.debug(`Failed to render section ${section}`, { error: error.message });
+        return '';
+      }
+    });
+
+    // Generate CSS
+    const customCSS = this.generateCSS(siteData.colors || [], config);
+
+    // Load base CSS
+    let baseCSS = '';
+    try {
+      baseCSS = await fs.readFile(path.join(this.templatesDir, 'base/styles.css'), 'utf-8');
+    } catch (error) {
+      log.debug('Using default CSS - base styles.css not found');
+      baseCSS = this.getDefaultCSS();
+    }
+
+    // Assemble final HTML
+    const html = this.assembleHTML(siteData, slots, sections, baseCSS, customCSS);
+
+    return {
+      html,
+      industry,
+      slots,
+      needsAiPolish: Object.entries(slots)
+        .filter(([k]) => slots[`${k}_aiEnhance`])
+        .map(([k]) => k)
+    };
+  }
+
+  async buildWithSlots(siteData, polishedSlots) {
+    await this.init();
+
+    const industry = siteData.industry || this.detectIndustry(siteData);
+    const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
+
+    // Build HTML from sections with polished slots
+    const sections = (config.sections || []).map(section => {
+      const component = this.components[section];
+      if (!component) return '';
+      try {
+        return component({ ...siteData, ...polishedSlots });
+      } catch (error) {
+        log.debug(`Failed to render section ${section}`, { error: error.message });
+        return '';
+      }
+    });
+
+    // Generate CSS
+    const customCSS = this.generateCSS(siteData.colors || [], config);
+
+    // Load base CSS
+    let baseCSS = '';
+    try {
+      baseCSS = await fs.readFile(path.join(this.templatesDir, 'base/styles.css'), 'utf-8');
+    } catch (error) {
+      log.debug('Using default CSS - base styles.css not found');
+      baseCSS = this.getDefaultCSS();
+    }
+
+    return this.assembleHTML(siteData, polishedSlots, sections, baseCSS, customCSS);
+  }
+
+  assembleHTML(siteData, slots, sections, baseCSS, customCSS) {
+    const title = slots.business_name || siteData.businessName || 'Website Preview';
+    const description = slots.subheadline || siteData.description || '';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <meta name="description" content="${description}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+${baseCSS}
+${customCSS}
+  </style>
+</head>
+<body>
+${sections.join('\n')}
+</body>
+</html>`;
+  }
+
+  getDefaultCSS() {
+    return `
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Nunito', 'Quicksand', system-ui, -apple-system, sans-serif;
+  color: var(--color-text, #292524);
+  line-height: 1.7;
+  background: var(--color-background, #fffbf7);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* Header */
+.site-header {
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  z-index: 100;
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo img {
+  height: 40px;
+  width: auto;
+}
+
+.logo-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.main-nav {
+  display: flex;
+  gap: 2rem;
+}
+
+.main-nav a {
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.main-nav a:hover {
+  color: var(--color-primary);
+}
+
+.header-cta {
+  background: var(--color-primary);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.header-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Hero */
+.hero {
+  padding: 5rem 0;
+  background: var(--color-surface);
+}
+
+.hero .container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--color-text);
+  line-height: 1.2;
+}
+
+.hero p {
+  font-size: 1.25rem;
+  color: var(--color-text-light);
+  margin-bottom: 2rem;
+  max-width: 600px;
+}
+
+.hero-image img {
+  width: 100%;
+  height: auto;
+  border-radius: 1rem;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+}
+
+.btn-primary {
+  display: inline-block;
+  background: var(--color-primary);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Services Grid */
+.services-section {
+  padding: 5rem 0;
+}
+
+.services-section h2 {
+  font-size: 2.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.services-section > p {
+  text-align: center;
+  color: var(--color-text-light);
+  margin-bottom: 3rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 3rem;
+}
+
+.service-card {
+  padding: 2rem;
+  background: var(--color-surface);
+  border-radius: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.service-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+}
+
+.service-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.service-card h3 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.service-card p {
+  color: var(--color-text-light);
+}
+
+/* Testimonials */
+.testimonials-section {
+  padding: 5rem 0;
+  background: var(--color-primary);
+  color: white;
+}
+
+.testimonials-section h2 {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 3rem;
+}
+
+.testimonials-slider {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.testimonial {
+  text-align: center;
+  padding: 2rem;
+}
+
+.testimonial p {
+  font-size: 1.25rem;
+  font-style: italic;
+  margin-bottom: 1.5rem;
+  line-height: 1.8;
+}
+
+.testimonial cite {
+  font-style: normal;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* Contact */
+.contact-section {
+  padding: 5rem 0;
+}
+
+.contact-section h2 {
+  font-size: 2rem;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.contact-info p {
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* CTA Banner */
+.cta-banner {
+  padding: 4rem 0;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.cta-banner h2 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+
+.cta-banner p {
+  color: var(--color-text-light);
+  margin-bottom: 2rem;
+}
+
+/* Footer */
+.site-footer {
+  padding: 3rem 0;
+  background: var(--color-text);
+  color: white;
+}
+
+.site-footer .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-links {
+  display: flex;
+  gap: 2rem;
+}
+
+.footer-links a {
+  color: rgba(255,255,255,0.7);
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  color: white;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .hero h1 { font-size: 2rem; }
+  .hero .container { grid-template-columns: 1fr; }
+  .hero-image { order: -1; }
+  .main-nav { display: none; }
+  .contact-grid { grid-template-columns: 1fr; }
+  .site-footer .container { flex-direction: column; gap: 1rem; text-align: center; }
+}
+    `;
+  }
+}
+
+export default TemplateBuilder;

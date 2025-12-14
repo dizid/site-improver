@@ -1,0 +1,13 @@
+<!-- CTA Banner: Warm invitation to connect -->
+<section class="cta-banner">
+  <div class="container">
+    <h2>Ready to Get Started?</h2>
+    <p>We're here to help! Reach out today and let's talk about what you need.</p>
+
+    {{#if phone}}
+    <a href="tel:{{phone}}" class="btn-primary">Give Us a Call</a>
+    {{else}}
+    <a href="#contact" class="btn-primary">Contact Us Today</a>
+    {{/if}}
+  </div>
+</section>

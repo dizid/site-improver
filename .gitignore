@@ -1,0 +1,40 @@
+# Environment files (NEVER commit these!)
+.env
+.env.local
+.env.*.local
+dev.txt
+
+# Dependencies
+node_modules/
+dashboard/node_modules/
+
+# Build output
+dashboard/dist/
+
+# Database (contains lead data)
+deployments.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+
+# Netlify
+.netlify/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

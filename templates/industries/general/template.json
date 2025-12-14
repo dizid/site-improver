@@ -1,0 +1,57 @@
+{
+  "id": "general",
+  "name": "General Business",
+  "keywords": [],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Welcome to {{businessName}}",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Quality service you can trust",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Get Started"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "What We Offer"
+    },
+    "why_us_headline": {
+      "source": null,
+      "fallback": "Why Choose Us"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#3b82f6",
+      "secondary": "#10b981",
+      "accent": "#f59e0b"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+<!-- Hero: Asymmetric layout with rounded image frame -->
+<section class="hero">
+  <div class="container">
+    <!-- Hero text content -->
+    <div class="hero-content">
+      <h1>{{headline}}</h1>
+      <p>{{subheadline}}</p>
+
+      <!-- Pill-shaped action buttons -->
+      <div class="hero-buttons">
+        <a href="#contact" class="btn-primary">{{cta_text}}</a>
+        {{#if phone}}
+        <a href="tel:{{phone}}" class="btn-secondary">Call {{phone}}</a>
+        {{/if}}
+      </div>
+    </div>
+
+    <!-- Rounded image with decorative frame -->
+    <div class="hero-image">
+      {{#if hero_image}}
+        <img src="{{hero_image}}" alt="{{businessName}} - Welcome">
+      {{/if}}
+    </div>
+  </div>
+</section>

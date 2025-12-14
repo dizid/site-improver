@@ -1,0 +1,52 @@
+{
+  "name": "site-improver",
+  "version": "1.0.0",
+  "description": "Automated site rebuilding and cold outreach pipeline",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "scrape": "node src/cli.js scrape",
+    "build": "node src/cli.js build",
+    "deploy": "node src/cli.js deploy",
+    "outreach": "node src/cli.js outreach",
+    "pipeline": "node src/cli.js pipeline",
+    "sequence": "node src/cli.js sequence",
+    "cleanup": "node src/cli.js cleanup",
+    "list": "node src/cli.js list",
+    "find": "node src/cli.js find",
+    "score": "node src/cli.js score",
+    "batch": "node src/cli.js batch",
+    "process-csv": "node src/cli.js process-csv",
+    "dashboard:dev": "cd dashboard && npm run dev",
+    "dashboard:build": "cd dashboard && npm run build",
+    "postinstall": "cd dashboard && npm install && npm run build"
+  },
+  "keywords": [
+    "web-scraping",
+    "site-builder",
+    "cold-outreach",
+    "automation"
+  ],
+  "author": "Marc @ Dizid",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "cheerio": "^1.0.0",
+    "commander": "^12.1.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "handlebars": "^4.7.8",
+    "netlify": "^13.1.0",
+    "playwright": "^1.48.0",
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5",
+    "vitest": "^2.1.0"
+  }
+}

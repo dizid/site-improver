@@ -1,0 +1,57 @@
+{
+  "id": "lawyer",
+  "name": "Legal Services",
+  "keywords": ["lawyer", "attorney", "law firm", "legal", "litigation", "divorce", "injury", "criminal", "defense", "estate", "bankruptcy", "immigration", "business law", "family law", "personal injury", "counsel", "practice"],
+  
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+  
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Experienced Legal Representation You Can Trust",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Dedicated to protecting your rights and achieving the best possible outcome",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Free Consultation"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Practice Areas"
+    },
+    "why_us_headline": {
+      "source": null,
+      "fallback": "Why Choose Our Firm"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+  
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#1e3a5f",
+      "secondary": "#0369a1",
+      "accent": "#d97706"
+    }
+  }
+}

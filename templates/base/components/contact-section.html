@@ -1,0 +1,53 @@
+<!-- Contact: Welcoming layout with warm accents -->
+<section id="contact" class="contact-section">
+  <div class="container">
+    <h2>We'd Love to Hear From You</h2>
+    <p class="section-subtitle">Have a question? Ready to get started? Reach out anytime!</p>
+
+    <div class="contact-grid">
+      <!-- Contact information card -->
+      <div class="contact-info">
+        <h3>Let's Connect</h3>
+
+        {{#if phone}}
+        <p>
+          <span class="icon">📞</span>
+          <a href="tel:{{phone}}">{{phone}}</a>
+        </p>
+        {{/if}}
+
+        {{#if email}}
+        <p>
+          <span class="icon">✉️</span>
+          <a href="mailto:{{email}}">{{email}}</a>
+        </p>
+        {{/if}}
+
+        {{#if address}}
+        <p>
+          <span class="icon">📍</span>
+          <span>{{address}}</span>
+        </p>
+        {{/if}}
+
+        {{#if hours}}
+        <p>
+          <span class="icon">🕐</span>
+          <span>{{hours}}</span>
+        </p>
+        {{/if}}
+      </div>
+
+      <!-- Contact form with rounded inputs -->
+      <div class="contact-form">
+        <form action="#" method="POST">
+          <input type="text" name="name" placeholder="Your Name" required>
+          <input type="email" name="email" placeholder="Your Email" required>
+          <input type="tel" name="phone" placeholder="Your Phone (optional)">
+          <textarea name="message" placeholder="Tell us how we can help..."></textarea>
+          <button type="submit">Send Message</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
