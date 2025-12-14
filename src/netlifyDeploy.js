@@ -1,5 +1,5 @@
 // src/netlifyDeploy.js
-import { NetlifyAPI } from 'netlify';
+// Use dynamic import for 'netlify' package to support ESM in Netlify Functions
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -10,10 +10,30 @@ import { slugify } from './utils.js';
 
 const log = logger.child('netlifyDeploy');
 
+// Cache the NetlifyAPI class after dynamic import
+let NetlifyAPI = null;
+
+async function getNetlifyAPI() {
+  if (!NetlifyAPI) {
+    const netlifyModule = await import('netlify');
+    NetlifyAPI = netlifyModule.NetlifyAPI;
+  }
+  return NetlifyAPI;
+}
+
 export class NetlifyDeployer {
   constructor(authToken) {
-    this.client = new NetlifyAPI(authToken);
+    this.authToken = authToken;
+    this.client = null;
     this.sitePrefix = 'preview';
+  }
+
+  async ensureClient() {
+    if (!this.client) {
+      const API = await getNetlifyAPI();
+      this.client = new API(this.authToken);
+    }
+    return this.client;
   }
 
   slugify(businessName) {
@@ -28,9 +48,10 @@ export class NetlifyDeployer {
 
   async createSite(businessName) {
     const siteName = this.generateSiteId(businessName);
+    const client = await this.ensureClient();
 
     try {
-      const site = await this.client.createSite({
+      const site = await client.createSite({
         body: {
           name: siteName,
           custom_domain: null
@@ -97,6 +118,7 @@ export class NetlifyDeployer {
 
   async deployFiles(siteId, deployDir) {
     const files = await this.getFilesRecursive(deployDir);
+    const client = await this.ensureClient();
 
     // Create file digest for Netlify
     const filesDigest = {};
@@ -110,7 +132,7 @@ export class NetlifyDeployer {
     }
 
     // Create deploy
-    const deploy = await this.client.createSiteDeploy({
+    const deploy = await client.createSiteDeploy({
       site_id: siteId,
       body: {
         files: filesDigest,
@@ -126,7 +148,7 @@ export class NetlifyDeployer {
       const file = fileHashes.get(hash);
       if (file) {
         const content = await fs.readFile(file.path);
-        await this.client.uploadDeployFile({
+        await client.uploadDeployFile({
           deploy_id: deploy.id,
           path: file.relative,
           body: content
@@ -139,9 +161,10 @@ export class NetlifyDeployer {
 
   async waitForDeploy(deployId, maxWait = CONFIG.timeouts.deployMax) {
     const start = Date.now();
+    const client = await this.ensureClient();
 
     while (Date.now() - start < maxWait) {
-      const deploy = await this.client.getDeploy({ deploy_id: deployId });
+      const deploy = await client.getDeploy({ deploy_id: deployId });
 
       if (deploy.state === 'ready') {
         return deploy;
@@ -187,11 +210,13 @@ export class NetlifyDeployer {
   }
 
   async deleteSite(siteId) {
-    await this.client.deleteSite({ site_id: siteId });
+    const client = await this.ensureClient();
+    await client.deleteSite({ site_id: siteId });
   }
 
   async listPreviewSites() {
-    const sites = await this.client.listSites();
+    const client = await this.ensureClient();
+    const sites = await client.listSites();
     return sites.filter(s => s.name.startsWith(this.sitePrefix));
   }
 
