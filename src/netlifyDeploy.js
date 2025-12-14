@@ -1,39 +1,53 @@
 // src/netlifyDeploy.js
-// Use dynamic import for 'netlify' package to support ESM in Netlify Functions
+// Uses Netlify REST API directly with fetch to avoid ESM/bundling issues in serverless
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { createReadStream } from 'fs';
 import logger from './logger.js';
 import { CONFIG } from './config.js';
 import { slugify } from './utils.js';
 
 const log = logger.child('netlifyDeploy');
 
-// Cache the NetlifyAPI class after dynamic import
-let NetlifyAPI = null;
-
-async function getNetlifyAPI() {
-  if (!NetlifyAPI) {
-    const netlifyModule = await import('netlify');
-    NetlifyAPI = netlifyModule.NetlifyAPI;
-  }
-  return NetlifyAPI;
-}
+const NETLIFY_API_BASE = 'https://api.netlify.com/api/v1';
 
 export class NetlifyDeployer {
   constructor(authToken) {
     this.authToken = authToken;
-    this.client = null;
     this.sitePrefix = 'preview';
   }
 
-  async ensureClient() {
-    if (!this.client) {
-      const API = await getNetlifyAPI();
-      this.client = new API(this.authToken);
+  async apiRequest(method, endpoint, body = null, contentType = 'application/json') {
+    const url = `${NETLIFY_API_BASE}${endpoint}`;
+    const headers = {
+      'Authorization': `Bearer ${this.authToken}`,
+    };
+
+    if (contentType) {
+      headers['Content-Type'] = contentType;
     }
-    return this.client;
+
+    const options = {
+      method,
+      headers,
+    };
+
+    if (body !== null) {
+      options.body = contentType === 'application/json' ? JSON.stringify(body) : body;
+    }
+
+    const response = await fetch(url, options);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const error = new Error(`Netlify API error: ${response.status} ${errorText}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    // Some endpoints return empty response
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
   }
 
   slugify(businessName) {
@@ -48,14 +62,11 @@ export class NetlifyDeployer {
 
   async createSite(businessName) {
     const siteName = this.generateSiteId(businessName);
-    const client = await this.ensureClient();
 
     try {
-      const site = await client.createSite({
-        body: {
-          name: siteName,
-          custom_domain: null
-        }
+      const site = await this.apiRequest('POST', '/sites', {
+        name: siteName,
+        custom_domain: null
       });
 
       return site;
@@ -118,7 +129,6 @@ export class NetlifyDeployer {
 
   async deployFiles(siteId, deployDir) {
     const files = await this.getFilesRecursive(deployDir);
-    const client = await this.ensureClient();
 
     // Create file digest for Netlify
     const filesDigest = {};
@@ -132,13 +142,10 @@ export class NetlifyDeployer {
     }
 
     // Create deploy
-    const deploy = await client.createSiteDeploy({
-      site_id: siteId,
-      body: {
-        files: filesDigest,
-        draft: false,
-        production: true
-      }
+    const deploy = await this.apiRequest('POST', `/sites/${siteId}/deploys`, {
+      files: filesDigest,
+      draft: false,
+      production: true
     });
 
     // Upload required files
@@ -148,11 +155,12 @@ export class NetlifyDeployer {
       const file = fileHashes.get(hash);
       if (file) {
         const content = await fs.readFile(file.path);
-        await client.uploadDeployFile({
-          deploy_id: deploy.id,
-          path: file.relative,
-          body: content
-        });
+        await this.apiRequest(
+          'PUT',
+          `/deploys/${deploy.id}/files${file.relative}`,
+          content,
+          'application/octet-stream'
+        );
       }
     }
 
@@ -161,10 +169,9 @@ export class NetlifyDeployer {
 
   async waitForDeploy(deployId, maxWait = CONFIG.timeouts.deployMax) {
     const start = Date.now();
-    const client = await this.ensureClient();
 
     while (Date.now() - start < maxWait) {
-      const deploy = await client.getDeploy({ deploy_id: deployId });
+      const deploy = await this.apiRequest('GET', `/deploys/${deployId}`);
 
       if (deploy.state === 'ready') {
         return deploy;
@@ -210,13 +217,11 @@ export class NetlifyDeployer {
   }
 
   async deleteSite(siteId) {
-    const client = await this.ensureClient();
-    await client.deleteSite({ site_id: siteId });
+    await this.apiRequest('DELETE', `/sites/${siteId}`);
   }
 
   async listPreviewSites() {
-    const client = await this.ensureClient();
-    const sites = await client.listSites();
+    const sites = await this.apiRequest('GET', '/sites');
     return sites.filter(s => s.name.startsWith(this.sitePrefix));
   }
 
