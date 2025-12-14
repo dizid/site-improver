@@ -7,7 +7,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["playwright", "playwright-core", "chromium-bidi", "netlify"]
+  external_node_modules = ["playwright", "playwright-core", "chromium-bidi"]
 
 [build]
   command = "npm run dashboard:build"

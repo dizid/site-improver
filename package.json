@@ -36,12 +36,11 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
-    "cheerio": "^1.0.0",
+    "cheerio": "1.0.0-rc.12",
     "commander": "^12.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "handlebars": "^4.7.8",
-    "netlify": "^13.1.0",
     "playwright": "^1.48.0",
     "resend": "^4.0.0"
   },
