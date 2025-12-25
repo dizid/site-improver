@@ -7,7 +7,13 @@ vi.mock('../src/db.js', () => ({
   getDeployment: vi.fn(),
   updateDeployment: vi.fn(),
   deleteDeployment: vi.fn(),
-  saveDeployment: vi.fn()
+  saveDeployment: vi.fn(),
+  getStats: vi.fn(),
+  getLeads: vi.fn(),
+  getLead: vi.fn(),
+  createLead: vi.fn(),
+  updateLead: vi.fn(),
+  deleteLead: vi.fn()
 }));
 
 vi.mock('../src/outreach.js', () => ({
@@ -41,13 +47,16 @@ describe('server', () => {
 
   describe('GET /api/stats', () => {
     it('should return stats object', async () => {
-      const mockDeployments = [
-        { siteId: '1', status: 'pending', industry: 'plumbing' },
-        { siteId: '2', status: 'emailed', industry: 'plumbing' },
-        { siteId: '3', status: 'converted', industry: 'hvac' }
-      ];
+      const mockStats = {
+        totalLeads: 3,
+        totalDeployments: 3,
+        byStatus: { pending: 1, emailed: 1, converted: 1 },
+        byIndustry: { plumbing: 2, hvac: 1 },
+        conversionRate: '33.3',
+        activeDeployments: 3
+      };
 
-      db.getDeployments.mockResolvedValue(mockDeployments);
+      db.getStats.mockResolvedValue(mockStats);
 
       // Create a mock request/response
       const req = {};
@@ -65,9 +74,9 @@ describe('server', () => {
         await route.route.stack[0].handle(req, res);
         expect(res.json).toHaveBeenCalled();
         const stats = res.json.mock.calls[0][0];
-        expect(stats.total).toBe(3);
-        expect(stats.pending).toBe(1);
-        expect(stats.converted).toBe(1);
+        expect(stats.totalLeads).toBe(3);
+        expect(stats.byStatus.pending).toBe(1);
+        expect(stats.byStatus.converted).toBe(1);
         expect(stats.byIndustry.plumbing).toBe(2);
       }
     });

@@ -1,24 +1,56 @@
-<!-- Hero: Asymmetric layout with rounded image frame -->
+<!-- Hero: Modern asymmetric layout with visual interest -->
 <section class="hero">
   <div class="container">
     <!-- Hero text content -->
     <div class="hero-content">
+      <!-- Trust badge above headline -->
+      {{#if years_in_business}}
+      <span class="hero-badge">
+        <span class="badge-icon">⭐</span>
+        Trusted for {{years_in_business}}+ Years
+      </span>
+      {{else}}
+      <span class="hero-badge">
+        <span class="badge-icon">✓</span>
+        Local & Trusted
+      </span>
+      {{/if}}
+
       <h1>{{headline}}</h1>
       <p>{{subheadline}}</p>
 
-      <!-- Pill-shaped action buttons -->
+      <!-- Action buttons -->
       <div class="hero-buttons">
-        <a href="#contact" class="btn-primary">{{cta_text}}</a>
+        <a href="#contact" class="btn-primary">
+          {{cta_text}}
+          <span class="btn-arrow">→</span>
+        </a>
         {{#if phone}}
-        <a href="tel:{{phone}}" class="btn-secondary">Call {{phone}}</a>
+        <a href="tel:{{phone}}" class="btn-secondary">
+          <span class="btn-icon">📞</span>
+          Call {{phone}}
+        </a>
         {{/if}}
       </div>
+
+      <!-- Trust indicators -->
+      {{#if rating}}
+      <div class="hero-trust">
+        <div class="trust-stars">★★★★★</div>
+        <span class="trust-text">{{rating}} rating · {{review_count}} reviews</span>
+      </div>
+      {{/if}}
     </div>
 
-    <!-- Rounded image with decorative frame -->
+    <!-- Hero image with decorative frame -->
     <div class="hero-image">
       {{#if hero_image}}
-        <img src="{{hero_image}}" alt="{{businessName}} - Welcome">
+        <img src="{{hero_image}}" alt="{{businessName}} - Professional Services" loading="eager">
+      {{else}}
+        <!-- Placeholder gradient when no image -->
+        <div class="hero-image-placeholder">
+          <span class="placeholder-icon">🏢</span>
+        </div>
       {{/if}}
     </div>
   </div>

@@ -1,14 +1,16 @@
 // src/batch.js
-// Batch processor: Find leads → Score → Process pipeline
+// Batch processor: Find leads → Qualify → Score → Process pipeline
 
 import fs from 'fs/promises';
 import LeadFinder from './leadFinder.js';
 import SiteScorer from './siteScorer.js';
+import PageSpeedScorer from './pageSpeedScorer.js';
+import { LeadQualifier } from './leadQualifier.js';
 import { rebuildAndDeploy } from './pipeline.js';
 import { OutreachManager } from './outreach.js';
 import { saveDeployment, getDeployments } from './db.js';
 import logger from './logger.js';
-import { CONFIG } from './config.js';
+import { CONFIG, getFeatures } from './config.js';
 import { delay } from './utils.js';
 
 const log = logger.child('batch');
@@ -21,16 +23,32 @@ export class BatchProcessor {
       resendKey: config.resendKey || process.env.RESEND_API_KEY,
       fromEmail: config.fromEmail || process.env.FROM_EMAIL,
       maxScoreThreshold: config.maxScoreThreshold || CONFIG.scoring.maxTargetScore,
+      primeScoreThreshold: config.primeScoreThreshold || CONFIG.scoring.primeTargetScore,
       skipPolish: config.skipPolish || false,
       skipEmail: config.skipEmail || false,
+      skipQualify: config.skipQualify || false,
+      scoringStrategy: config.scoringStrategy || 'hybrid', // 'pageSpeed', 'browser', or 'hybrid'
       concurrency: config.concurrency || CONFIG.batch.defaultConcurrency,
       delayBetween: config.delayBetween || CONFIG.batch.defaultDelay
     };
 
+    this.features = getFeatures();
+
     if (this.config.outscraperKey) {
       this.leadFinder = new LeadFinder(this.config.outscraperKey);
     }
+
+    // Site scoring - browser-based (fallback)
     this.siteScorer = new SiteScorer();
+
+    // PageSpeed API scoring (faster, when available)
+    this.pageSpeedScorer = new PageSpeedScorer();
+
+    // Lead qualification (filter junk, prioritize)
+    this.leadQualifier = new LeadQualifier({
+      requireContact: true,
+      filterMarkets: false
+    });
   }
 
   /**
@@ -74,20 +92,51 @@ export class BatchProcessor {
       return { leads: [], targets: [], results: [], stats: { total: 0 } };
     }
 
-    // Step 2: Score sites
+    // Step 1B: Pre-qualify leads (filter junk before scoring)
+    let qualifiedLeads = leads;
+    let qualificationStats = null;
+
+    if (!this.config.skipQualify) {
+      console.log('\n🔍 STEP 1B: Qualifying leads...\n');
+
+      const qualResult = this.leadQualifier.qualifyBatch(leads);
+      qualifiedLeads = qualResult.qualified.map(q => q.lead || q);
+      qualificationStats = qualResult.stats;
+
+      console.log(`   - Total: ${qualificationStats.total}`);
+      console.log(`   - Qualified: ${qualificationStats.qualified}`);
+      console.log(`   - Disqualified: ${qualificationStats.disqualified}`);
+
+      if (Object.keys(qualificationStats.disqualifyReasons).length > 0) {
+        console.log('   - Rejection reasons:');
+        for (const [reason, count] of Object.entries(qualificationStats.disqualifyReasons)) {
+          console.log(`     • ${reason}: ${count}`);
+        }
+      }
+
+      if (qualifiedLeads.length === 0) {
+        console.log('\n⚠️  No qualified leads. All filtered out.');
+        return { leads, targets: [], results: [], stats: { total: leads.length, qualified: 0 } };
+      }
+    }
+
+    // Step 2: Score sites (hybrid: PageSpeed first, fallback to browser)
     console.log('\n📊 STEP 2: Scoring websites...\n');
-    
-    const { targets, stats } = await this.siteScorer.filterLeads(leads, {
+
+    const { targets, stats } = await this.scoreLeads(qualifiedLeads, {
       maxScore: this.config.maxScoreThreshold,
-      onlyPrime: false
+      strategy: this.config.scoringStrategy
     });
 
     console.log('\n   Scoring Stats:');
-    console.log(`   - Total leads: ${stats.total}`);
+    console.log(`   - Leads scored: ${stats.total}`);
     console.log(`   - With websites: ${stats.withWebsite}`);
     console.log(`   - Targets (score < ${this.config.maxScoreThreshold}): ${stats.targets}`);
-    console.log(`   - Prime targets (score < 40): ${stats.primeTargets}`);
+    console.log(`   - Prime targets (score < ${this.config.primeScoreThreshold}): ${stats.primeTargets}`);
     console.log(`   - Average score: ${stats.avgScore}`);
+    if (stats.scoringMethod) {
+      console.log(`   - Scoring method: ${stats.scoringMethod}`);
+    }
 
     // Step 3: Process pipeline
     console.log('\n🔧 STEP 3: Processing targets...\n');
@@ -235,10 +284,23 @@ export class BatchProcessor {
 
     console.log(`📄 Loaded ${leads.length} leads from CSV`);
 
-    // Score and filter
-    const { targets, stats } = await this.siteScorer.filterLeads(leads, {
-      maxScore: options.maxScore || this.config.maxScoreThreshold
+    // Qualify leads first
+    let qualifiedLeads = leads;
+    if (!options.skipQualify) {
+      console.log('\n🔍 Qualifying leads...');
+      const qualResult = this.leadQualifier.qualifyBatch(leads);
+      qualifiedLeads = qualResult.qualified.map(q => q.lead || q);
+      console.log(`   Qualified: ${qualifiedLeads.length}/${leads.length}`);
+    }
+
+    // Score and filter using hybrid scoring
+    console.log('\n📊 Scoring websites...');
+    const { targets, stats } = await this.scoreLeads(qualifiedLeads, {
+      maxScore: options.maxScore || this.config.maxScoreThreshold,
+      strategy: this.config.scoringStrategy
     });
+
+    console.log(`   Targets: ${targets.length} (score < ${options.maxScore || this.config.maxScoreThreshold})`);
 
     // Process
     return this.processLeads(targets, options);
@@ -296,10 +358,114 @@ export class BatchProcessor {
     return results;
   }
 
+  /**
+   * Score leads using hybrid strategy (PageSpeed first, browser fallback)
+   */
+  async scoreLeads(leads, options = {}) {
+    const { maxScore = 60, strategy = 'hybrid' } = options;
+    const results = [];
+    let scoringMethod = 'browser';
+
+    // Filter to leads with websites
+    const leadsWithWebsites = leads.filter(l => l.website);
+
+    for (const lead of leadsWithWebsites) {
+      let scoreResult = null;
+
+      // Try PageSpeed first (if hybrid or pageSpeed strategy)
+      if (strategy === 'hybrid' || strategy === 'pageSpeed') {
+        try {
+          const psResult = await this.pageSpeedScorer.assessTarget(lead.website);
+          if (psResult && psResult.targetScore !== undefined) {
+            scoreResult = {
+              score: psResult.targetScore, // Already inverted (lower PageSpeed = higher target score)
+              pageSpeedScore: psResult.pageSpeedScore,
+              isTarget: psResult.isTarget,
+              isPrimeTarget: psResult.isPrimeTarget,
+              issues: this.formatPageSpeedIssues(psResult.categories),
+              method: 'pageSpeed'
+            };
+            scoringMethod = 'pageSpeed';
+          }
+        } catch (error) {
+          log.debug('PageSpeed failed, falling back to browser', { url: lead.website, error: error.message });
+        }
+      }
+
+      // Fallback to browser scoring (if no result yet or browser-only strategy)
+      if (!scoreResult && (strategy === 'hybrid' || strategy === 'browser')) {
+        try {
+          const browserResult = await this.siteScorer.score(lead.website);
+          scoreResult = {
+            score: browserResult.score,
+            isTarget: browserResult.isTarget,
+            isPrimeTarget: browserResult.isPrimeTarget,
+            issues: browserResult.issues || [],
+            method: 'browser'
+          };
+          if (scoringMethod !== 'pageSpeed') scoringMethod = 'browser';
+        } catch (error) {
+          log.warn('Browser scoring failed', { url: lead.website, error: error.message });
+          // Mark as potential target with unknown score
+          scoreResult = {
+            score: 50, // Middle score - unknown
+            isTarget: true,
+            isPrimeTarget: false,
+            issues: ['Scoring failed'],
+            method: 'fallback'
+          };
+        }
+      }
+
+      // Enrich lead with score
+      results.push({
+        ...lead,
+        siteScore: scoreResult.score,
+        siteIssues: scoreResult.issues,
+        isTarget: scoreResult.score < maxScore,
+        isPrimeTarget: scoreResult.score < this.config.primeScoreThreshold,
+        scoringMethod: scoreResult.method
+      });
+
+      console.log(`   ${lead.name || lead.website}: ${scoreResult.score} (${scoreResult.method})`);
+    }
+
+    // Filter to targets and sort (lower score = worse site = better target)
+    const targets = results
+      .filter(l => l.siteScore < maxScore)
+      .sort((a, b) => a.siteScore - b.siteScore);
+
+    // Calculate stats
+    const scores = results.map(r => r.siteScore).filter(s => s !== null);
+    const stats = {
+      total: results.length,
+      withWebsite: leadsWithWebsites.length,
+      targets: targets.length,
+      primeTargets: results.filter(r => r.isPrimeTarget).length,
+      avgScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
+      scoringMethod
+    };
+
+    return { targets, all: results, stats };
+  }
+
+  /**
+   * Format PageSpeed categories into issue list
+   */
+  formatPageSpeedIssues(categories) {
+    if (!categories) return [];
+    const issues = [];
+    if (categories.performance < 50) issues.push('Slow performance');
+    if (categories.accessibility < 50) issues.push('Accessibility issues');
+    if (categories.seo < 50) issues.push('Poor SEO');
+    if (categories.bestPractices < 50) issues.push('Best practices issues');
+    return issues;
+  }
+
   async checkExisting(website) {
     const deployments = await getDeployments();
-    return deployments.find(d => 
-      d.original === website || 
+    return deployments.find(d =>
+      d.original === website ||
       d.original === website.replace(/\/$/, '') ||
       d.original === 'https://' + website.replace(/^https?:\/\//, '')
     );

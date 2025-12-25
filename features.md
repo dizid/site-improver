@@ -8,18 +8,20 @@ A complete automated pipeline for website rebuilding, lead generation, and cold 
 
 1. [Core Pipeline](#core-pipeline)
 2. [Lead Generation](#lead-generation)
-3. [Site Scoring](#site-scoring)
-4. [Web Scraping](#web-scraping)
-5. [Template Building](#template-building)
-6. [AI-Powered Copy Enhancement](#ai-powered-copy-enhancement)
-7. [Netlify Deployment](#netlify-deployment)
-8. [Email Outreach](#email-outreach)
-9. [Batch Processing](#batch-processing)
-10. [Dashboard](#dashboard)
-11. [CLI Commands](#cli-commands)
-12. [API Endpoints](#api-endpoints)
-13. [Configuration](#configuration)
-14. [Database](#database)
+3. [Lead Qualification](#lead-qualification)
+4. [Site Scoring](#site-scoring)
+5. [Web Scraping](#web-scraping)
+6. [Template Building](#template-building)
+7. [AI-Powered Copy Enhancement](#ai-powered-copy-enhancement)
+8. [Netlify Deployment](#netlify-deployment)
+9. [Email Outreach](#email-outreach)
+10. [Batch Processing](#batch-processing)
+11. [Dashboard](#dashboard)
+12. [CLI Commands](#cli-commands)
+13. [API Endpoints](#api-endpoints)
+14. [Configuration](#configuration)
+15. [Database](#database)
+16. [Error Handling & Resilience](#error-handling--resilience)
 
 ---
 
@@ -47,18 +49,20 @@ The heart of Site Improver is an automated pipeline that transforms any business
 
 ## Lead Generation
 
-Find potential clients via Google Maps business data using the Outscraper API.
+Find potential clients via Google Maps business data using Outscraper API or Google Places API.
 
-### Features
+### Outscraper Integration (Primary)
 
+Uses Outscraper API for comprehensive Google Maps data.
+
+**Features:**
 - **Location-Based Search** - Search by business type + city/region
 - **Batch Search** - Search multiple locations in one run
 - **Industry Search** - Target specific industries across multiple cities
 - **Deduplication** - Automatic removal of duplicate websites
 - **Rate Limiting** - Built-in delays to respect API limits
 
-### Data Extracted
-
+**Data Extracted:**
 - Business name
 - Website URL
 - Phone number
@@ -69,9 +73,78 @@ Find potential clients via Google Maps business data using the Outscraper API.
 - Place ID
 - Coordinates (lat/lng)
 
-### Alternative: Google Custom Search
+### Google Places API Integration (Alternative)
 
-A free-tier option using Google Custom Search API for basic lead finding (name, website, snippet only).
+Direct integration with Google Places Text Search API (`src/googlePlaces.js`).
+
+**Features:**
+- **Text Search API** - Search businesses by query + location
+- **Batch Search** - Multi-query with rate limiting
+- **Industry Search** - Target industries across multiple regions
+- **Field Masking** - Request only needed fields to reduce costs
+
+**API Details:**
+- Endpoint: `https://places.googleapis.com/v1/places:searchText`
+- Auth: `X-Goog-Api-Key` header
+- Cost: ~$32 per 1000 requests
+
+**Data Extracted:**
+- Business name (displayName)
+- Website URL (websiteUri)
+- Phone (nationalPhoneNumber)
+- Address (formattedAddress)
+- Rating & review count
+- Business status
+- Primary type
+
+---
+
+## Lead Qualification
+
+Automated filtering and prioritization of leads based on multiple criteria (`src/leadQualifier.js`).
+
+### Qualification Checks
+
+1. **Has Website** - Must have a website URL
+2. **Valid Website** - Not a social media page (filters Facebook, Instagram, LinkedIn, etc.)
+3. **Has Contact** - Email or phone number (configurable)
+4. **Target Market** - Optionally filter by geographic market (NL, UK)
+5. **Site Score** - Quality score from site scoring
+
+### Target Markets
+
+| Market | Regions |
+|--------|---------|
+| NL (Netherlands) | Amsterdam, Rotterdam, Den Haag, Utrecht, Eindhoven, Tilburg, Groningen |
+| UK (United Kingdom) | London, Manchester, Birmingham, Leeds, Glasgow, Liverpool, Bristol |
+
+### Classifications
+
+| Classification | Score Range | Priority |
+|----------------|-------------|----------|
+| `prime_target` | 0-40 | 10 (highest) |
+| `target` | 40-60 | 7 |
+| `weak_target` | 60-80 | 3 |
+| `skip` | 80-100 | 0 |
+
+### Social Media Filtering
+
+Automatically excludes websites that are just social profiles:
+- facebook.com, fb.com
+- instagram.com
+- twitter.com, x.com
+- linkedin.com
+- youtube.com
+- tiktok.com
+- yelp.com, tripadvisor.com
+
+### Batch Qualification
+
+```javascript
+const qualifier = new LeadQualifier({ requireContact: true });
+const { qualified, disqualified, stats } = qualifier.qualifyBatch(leads);
+// Returns leads sorted by priority (prime targets first)
+```
 
 ---
 
@@ -79,7 +152,9 @@ A free-tier option using Google Custom Search API for basic lead finding (name, 
 
 Evaluate website quality to identify the best targets - sites with low scores are prime candidates for redesign.
 
-### Scoring Criteria (0-100 scale, lower = better target)
+### Browser-Based Scoring (Default)
+
+Uses Playwright to analyze sites with these criteria:
 
 | Factor | Weight | What It Measures |
 |--------|--------|------------------|
@@ -88,6 +163,21 @@ Evaluate website quality to identify the best targets - sites with low scores ar
 | Mobile | 20% | Responsive viewport meta tag |
 | Modern Design | 25% | CSS flexbox/grid, modern fonts, no table layouts, framework usage |
 | SEO Basics | 20% | Title, meta description, H1, structured data, heading hierarchy |
+
+### PageSpeed Insights Integration (Optional)
+
+Enhanced scoring using Google PageSpeed Insights API (`src/pageSpeedScorer.js`).
+
+**Features:**
+- **Lighthouse Scores** - Performance, Accessibility, Best Practices, SEO (0-100 each)
+- **Core Web Vitals** - LCP, FID/TBT, CLS, FCP, TTFB
+- **Mobile + Desktop** - Analyzes both with weighted average (60/40 mobile priority)
+- **Free API** - No cost, optional API key for higher quota
+
+**API Details:**
+- Endpoint: `https://www.googleapis.com/pagespeedonline/v5/runPagespeed`
+- Categories: performance, accessibility, best-practices, seo
+- Fallback: Uses browser-based scoring if API fails
 
 ### Score Classifications
 
@@ -104,6 +194,7 @@ Evaluate website quality to identify the best targets - sites with low scores ar
 - **Single Site Scoring** - Score individual URLs
 - **Batch Scoring** - Score multiple sites with concurrency control
 - **Lead Filtering** - Automatically filter leads to only targets below threshold
+- **Target Assessment** - Quick check if a site is worth pursuing
 
 ---
 
@@ -348,7 +439,7 @@ Import leads from CSV file with columns:
 
 ## Dashboard
 
-React-based web dashboard for managing leads and tracking conversions.
+Vue 3 web dashboard for managing leads and tracking conversions.
 
 ### Stats Overview
 
@@ -508,16 +599,18 @@ npm run process-csv leads.csv -- --dry-run --max-score 50
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes* | Claude API for AI copy |
-| `NETLIFY_AUTH_TOKEN` | Yes* | Netlify deployment |
-| `RESEND_API_KEY` | For email | Email sending |
+| `ANTHROPIC_API_KEY` | For AI | Claude API for AI copy enhancement |
+| `NETLIFY_AUTH_TOKEN` | For deploy | Netlify deployment |
+| `RESEND_API_KEY` | For email | Email sending via Resend |
 | `FROM_EMAIL` | For email | Sender email address |
-| `OUTSCRAPER_API_KEY` | For leads | Google Maps lead finding |
+| `OUTSCRAPER_API_KEY` | For leads | Google Maps lead finding (option 1) |
+| `GOOGLE_PLACES_API_KEY` | For leads | Google Places API (option 2) |
+| `PAGESPEED_API_KEY` | Optional | PageSpeed Insights (free, key = higher quota) |
 | `PORT` | No | Server port (default 3000) |
 | `DB_PATH` | No | Database file path |
-| `LOG_LEVEL` | No | Logging level |
+| `LOG_LEVEL` | No | Logging level (debug, info, warn, error) |
 
-*Required for respective features
+**Note:** The pipeline works with graceful degradation - missing API keys disable that feature but don't crash the system.
 
 ### Config File (`src/config.js`)
 
@@ -647,34 +740,42 @@ netlify dev              # Full Netlify dev environment
 ```
 site-improver/
 ├── src/
-│   ├── cli.js           # CLI entry point
-│   ├── server.js        # Express API server
-│   ├── config.js        # Centralized configuration
-│   ├── db.js            # JSON database operations
-│   ├── logger.js        # Structured logging
-│   ├── utils.js         # Utility functions
-│   ├── scraper.js       # Playwright web scraping
-│   ├── siteScorer.js    # Website quality scoring
-│   ├── leadFinder.js    # Outscraper API integration
+│   ├── cli.js            # CLI entry point
+│   ├── server.js         # Express API server + error handling
+│   ├── config.js         # Configuration + feature detection
+│   ├── db.js             # Database + error logging
+│   ├── logger.js         # Structured logging (pino)
+│   ├── utils.js          # Utilities + validation
+│   ├── scraper.js        # Playwright web scraping
+│   ├── siteScorer.js     # Browser-based site scoring
+│   ├── pageSpeedScorer.js # Google PageSpeed API integration
+│   ├── leadFinder.js     # Outscraper API integration
+│   ├── googlePlaces.js   # Google Places API integration
+│   ├── leadQualifier.js  # Lead filtering & prioritization
 │   ├── templateBuilder.js # Handlebars template system
-│   ├── aiPolish.js      # Claude AI copy enhancement
-│   ├── netlifyDeploy.js # Netlify API integration
+│   ├── aiPolish.js       # Claude AI copy enhancement
+│   ├── netlifyDeploy.js  # Netlify API integration
 │   ├── emailGenerator.js # AI email content generation
-│   ├── emailSender.js   # Resend API integration
-│   ├── outreach.js      # Email campaign management
-│   ├── pipeline.js      # Full pipeline orchestration
-│   ├── batch.js         # Batch processing logic
-│   └── index.js         # Module exports
+│   ├── emailSender.js    # Resend API integration
+│   ├── outreach.js       # Email campaign management
+│   ├── pipeline.js       # Pipeline orchestration + graceful degradation
+│   ├── batch.js          # Batch processing logic
+│   └── index.js          # Module exports
 ├── dashboard/
 │   └── src/
-│       └── App.jsx      # React dashboard
+│       ├── App.vue       # Vue 3 dashboard
+│       ├── api.js        # API client + helpers
+│       └── main.js       # Vue app entry
 ├── netlify/
 │   └── functions/
-│       └── api.js       # Serverless API wrapper
+│       └── api.js        # Serverless API wrapper
 ├── templates/
-│   ├── base/components/ # Reusable HTML components
-│   └── industries/      # Industry-specific configs
-└── deployments.json     # Local database
+│   ├── base/components/  # Reusable HTML components
+│   └── industries/       # Industry-specific configs
+├── tests/
+│   ├── db.test.js        # Database tests
+│   └── server.test.js    # API route tests
+└── deployments.json      # Local database
 ```
 
 ---
@@ -686,5 +787,76 @@ site-improver/
 | Anthropic Claude | AI copy enhancement & email generation | For AI features |
 | Netlify | Preview site hosting | For deployment |
 | Resend | Transactional email | For outreach |
-| Outscraper | Google Maps lead data | For lead finding |
+| Outscraper | Google Maps lead data | For lead finding (option 1) |
+| Google Places | Google Maps lead data | For lead finding (option 2) |
+| Google PageSpeed | Lighthouse site scoring | Optional (free, higher quota with key) |
 | Playwright | Browser automation | For scraping/scoring |
+
+---
+
+## Error Handling & Resilience
+
+Built-in reliability features to keep the pipeline running smoothly.
+
+### Graceful Degradation
+
+The pipeline continues even when optional services are unavailable:
+
+| Service | Behavior When Unavailable |
+|---------|--------------------------|
+| AI Polish | Skips enhancement, uses original text |
+| Netlify Deploy | Logs error, continues to next lead |
+| Email Sending | Skips outreach, deployment still saved |
+| PageSpeed API | Falls back to browser-based scoring |
+
+### Pipeline Error Tracking
+
+Errors are logged to the database with full context:
+
+```javascript
+{
+  id: string,        // Unique error ID
+  url: string,       // URL being processed
+  error: string,     // Error message
+  stack: string,     // Full stack trace
+  step: string,      // Pipeline step (scrape, build, polish, deploy, email)
+  leadId: string,    // Associated lead ID (if any)
+  createdAt: string  // ISO timestamp
+}
+```
+
+**API Endpoint:** `GET /api/errors?limit=20` - View recent pipeline errors
+
+### Feature Detection
+
+At startup, the system detects available features based on API keys:
+
+```javascript
+{
+  aiPolish: boolean,    // ANTHROPIC_API_KEY present
+  deploy: boolean,      // NETLIFY_AUTH_TOKEN present
+  email: boolean,       // RESEND_API_KEY + FROM_EMAIL present
+  leadFinder: boolean,  // OUTSCRAPER_API_KEY present
+  googlePlaces: boolean, // GOOGLE_PLACES_API_KEY present
+  pageSpeed: boolean    // PAGESPEED_API_KEY present (optional)
+}
+```
+
+### Input Validation
+
+All API inputs are validated before processing:
+
+- **URL Validation** - Protocol check, domain format, rejects localhost/IPs
+- **Email Validation** - RFC 5322 compliant regex
+- **Lead Data** - Required fields checked before pipeline
+
+### Custom Error Classes
+
+```javascript
+ApiError.badRequest('Invalid URL format', 'INVALID_URL')
+ApiError.notFound('Deployment not found')
+```
+
+### Async Route Handling
+
+All routes use `asyncHandler()` wrapper to catch Promise rejections and forward to error middleware.

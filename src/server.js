@@ -7,9 +7,45 @@ import * as db from './db.js';
 import { OutreachManager } from './outreach.js';
 import NetlifyDeployer from './netlifyDeploy.js';
 import logger from './logger.js';
-import { CONFIG } from './config.js';
+import { CONFIG, validateStartup } from './config.js';
+import { validateUrl, validateEmail } from './utils.js';
 
 const log = logger.child('server');
+
+// ==================== ERROR HANDLING ====================
+
+/**
+ * Custom API error class with status code
+ */
+export class ApiError extends Error {
+  constructor(message, statusCode = 500, code = 'INTERNAL_ERROR') {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.name = 'ApiError';
+  }
+
+  static badRequest(message, code = 'BAD_REQUEST') {
+    return new ApiError(message, 400, code);
+  }
+
+  static notFound(message = 'Resource not found', code = 'NOT_FOUND') {
+    return new ApiError(message, 404, code);
+  }
+
+  static internal(message = 'Internal server error', code = 'INTERNAL_ERROR') {
+    return new ApiError(message, 500, code);
+  }
+}
+
+/**
+ * Wrap async route handlers to catch errors
+ */
+function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 
 // Handle both ESM and bundled CJS environments
 const __dirname = import.meta.url
@@ -62,44 +98,204 @@ export function createServer(config = {}) {
     }
   });
 
-  // Get stats
+  // Get stats (uses new db.getStats if available)
   app.get('/api/stats', async (req, res) => {
     try {
+      // Try the new stats function first
+      if (db.getStats) {
+        const stats = await db.getStats();
+        res.json(stats);
+        return;
+      }
+
+      // Fallback to legacy stats calculation
       const deployments = await db.getDeployments();
-      
+
       const stats = {
-        total: deployments.length,
-        pending: deployments.filter(d => d.status === 'pending').length,
-        emailed: deployments.filter(d => d.status === 'emailed').length,
-        responded: deployments.filter(d => d.status === 'responded').length,
-        converted: deployments.filter(d => d.status === 'converted').length,
-        expired: deployments.filter(d => d.status === 'expired').length,
-        conversionRate: deployments.length > 0 
-          ? ((deployments.filter(d => d.status === 'converted').length / deployments.length) * 100).toFixed(1)
-          : 0,
-        revenue: deployments.filter(d => d.status === 'converted').length * 1000,
+        totalLeads: deployments.length,
+        totalDeployments: deployments.length,
+        byStatus: {},
         byIndustry: {},
-        recentActivity: []
+        conversionRate: 0,
+        activeDeployments: deployments.filter(d => d.status !== 'deleted' && d.status !== 'expired').length
       };
-      
-      // Group by industry
+
+      // Count by status
       deployments.forEach(d => {
+        const status = d.status || 'pending';
+        stats.byStatus[status] = (stats.byStatus[status] || 0) + 1;
+
         const ind = d.industry || 'unknown';
         stats.byIndustry[ind] = (stats.byIndustry[ind] || 0) + 1;
       });
-      
-      // Recent activity (last 10)
-      stats.recentActivity = deployments
-        .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
-        .slice(0, 10)
-        .map(d => ({
-          siteId: d.siteId,
-          businessName: d.businessName,
-          status: d.status,
-          date: d.updatedAt || d.createdAt
-        }));
-      
+
+      // Calculate conversion rate
+      const converted = stats.byStatus.converted || 0;
+      stats.conversionRate = deployments.length > 0
+        ? ((converted / deployments.length) * 100).toFixed(1)
+        : 0;
+
       res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get pipeline errors
+  app.get('/api/errors', async (req, res) => {
+    try {
+      const { limit = 20 } = req.query;
+      const errors = await db.getPipelineErrors(parseInt(limit));
+      res.json(errors);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== LEADS API ====================
+
+  // Get all leads
+  app.get('/api/leads', async (req, res) => {
+    try {
+      const { status, industry, search, limit } = req.query;
+      const filters = {};
+
+      if (status && status !== 'all') filters.status = status;
+      if (industry) filters.industry = industry;
+      if (limit) filters.limit = parseInt(limit);
+
+      let leads = await db.getLeads(filters);
+
+      // Search filter (applied after db query for flexibility)
+      if (search) {
+        const s = search.toLowerCase();
+        leads = leads.filter(l =>
+          (l.businessName || '').toLowerCase().includes(s) ||
+          (l.email || '').toLowerCase().includes(s) ||
+          (l.industry || '').toLowerCase().includes(s) ||
+          (l.url || '').toLowerCase().includes(s)
+        );
+      }
+
+      res.json(leads);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single lead
+  app.get('/api/leads/:leadId', async (req, res) => {
+    try {
+      const lead = await db.getLead(req.params.leadId);
+      if (!lead) {
+        return res.status(404).json({ error: 'Lead not found' });
+      }
+      res.json(lead);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create lead (for manual entry)
+  app.post('/api/leads', async (req, res) => {
+    try {
+      const { url, businessName, email, phone, industry, country } = req.body;
+
+      // Validate URL
+      const urlResult = validateUrl(url);
+      if (!urlResult.valid) {
+        return res.status(400).json({ error: urlResult.error });
+      }
+
+      // Validate email if provided
+      if (email) {
+        const emailResult = validateEmail(email);
+        if (!emailResult.valid) {
+          return res.status(400).json({ error: emailResult.error });
+        }
+      }
+
+      const lead = await db.createLead({
+        url: urlResult.normalized,
+        businessName,
+        email,
+        phone,
+        industry,
+        country
+      });
+
+      res.status(201).json(lead);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update lead
+  app.patch('/api/leads/:leadId', async (req, res) => {
+    try {
+      const { status, notes, businessName, email, phone, industry } = req.body;
+      const updates = {};
+
+      if (status) updates.status = status;
+      if (notes !== undefined) updates.notes = notes;
+      if (businessName) updates.businessName = businessName;
+      if (email) updates.email = email;
+      if (phone) updates.phone = phone;
+      if (industry) updates.industry = industry;
+
+      const lead = await db.updateLead(req.params.leadId, updates);
+      res.json(lead);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete lead
+  app.delete('/api/leads/:leadId', async (req, res) => {
+    try {
+      const lead = await db.getLead(req.params.leadId);
+
+      // Optionally delete from Netlify too
+      if (lead?.siteId && process.env.NETLIFY_AUTH_TOKEN && req.query.deleteNetlify === 'true') {
+        const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
+        try {
+          await deployer.deleteSite(lead.siteId);
+        } catch (e) {
+          log.warn('Failed to delete Netlify site', { error: e.message });
+        }
+      }
+
+      await db.deleteLead(req.params.leadId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Send email for lead
+  app.post('/api/leads/:leadId/send-email', async (req, res) => {
+    try {
+      if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
+        return res.status(400).json({ error: 'Email not configured' });
+      }
+
+      const lead = await db.getLead(req.params.leadId);
+      if (!lead) {
+        return res.status(404).json({ error: 'Lead not found' });
+      }
+
+      const outreach = new OutreachManager({
+        resendApiKey: process.env.RESEND_API_KEY,
+        fromEmail: process.env.FROM_EMAIL
+      });
+
+      await outreach.sendInitialOutreach(lead);
+
+      // Update lead status
+      await db.updateLead(req.params.leadId, { status: 'emailing' });
+
+      const updated = await db.getLead(req.params.leadId);
+      res.json(updated);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -186,27 +382,201 @@ export function createServer(config = {}) {
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
         return res.status(400).json({ error: 'Email not configured' });
       }
-      
+
       const { attempt = 1 } = req.body;
-      
+
       const deployment = await db.getDeployment(req.params.siteId);
       if (!deployment) {
         return res.status(404).json({ error: 'Deployment not found' });
       }
-      
+
       const outreach = new OutreachManager({
         resendApiKey: process.env.RESEND_API_KEY,
         fromEmail: process.env.FROM_EMAIL
       });
-      
+
       await outreach.sendFollowUp(deployment, attempt);
-      
+
       const updated = await db.getDeployment(req.params.siteId);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // ==================== HANDOVER / EXPORT ====================
+
+  // Export site HTML for handover
+  app.get('/api/deployments/:siteId/export', asyncHandler(async (req, res) => {
+    const deployment = await db.getDeployment(req.params.siteId);
+    if (!deployment) {
+      throw ApiError.notFound('Deployment not found');
+    }
+
+    if (!deployment.url) {
+      throw ApiError.badRequest('Deployment has no preview URL');
+    }
+
+    log.info('Exporting site for handover', { siteId: req.params.siteId, url: deployment.url });
+
+    // Fetch HTML from deployed site
+    const response = await fetch(deployment.url, {
+      headers: {
+        'User-Agent': 'SiteImprover-Export/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      throw ApiError.internal(`Failed to fetch site: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Determine filename
+    const safeName = (deployment.businessName || 'website')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    // Set headers for download
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}-redesign.html"`);
+    res.setHeader('Content-Length', Buffer.byteLength(html, 'utf8'));
+
+    res.send(html);
+  }));
+
+  // Get export info (preview before download)
+  app.get('/api/deployments/:siteId/export-info', asyncHandler(async (req, res) => {
+    const deployment = await db.getDeployment(req.params.siteId);
+    if (!deployment) {
+      throw ApiError.notFound('Deployment not found');
+    }
+
+    res.json({
+      siteId: deployment.siteId,
+      businessName: deployment.businessName,
+      previewUrl: deployment.url,
+      canExport: !!deployment.url,
+      exportUrl: `/api/deployments/${req.params.siteId}/export`,
+      handoverInfo: {
+        instructions: [
+          '1. Download the HTML file using the export button',
+          '2. The file contains all CSS inline - no additional files needed',
+          '3. Host on any web server or upload to their existing hosting',
+          '4. Update any placeholder content if needed'
+        ],
+        notes: deployment.notes || null
+      }
+    });
+  }));
+
+  // Mark as converted (customer paid)
+  app.post('/api/deployments/:siteId/convert', asyncHandler(async (req, res) => {
+    const { amount, notes } = req.body;
+
+    const deployment = await db.getDeployment(req.params.siteId);
+    if (!deployment) {
+      throw ApiError.notFound('Deployment not found');
+    }
+
+    const updates = {
+      status: 'converted',
+      convertedAt: new Date().toISOString()
+    };
+
+    if (amount) updates.paymentAmount = amount;
+    if (notes) updates.notes = (deployment.notes || '') + '\n' + notes;
+
+    const updated = await db.updateDeployment(req.params.siteId, updates);
+    log.info('Deployment converted!', { siteId: req.params.siteId, amount });
+
+    res.json(updated);
+  }));
+
+  // ==================== DISCOVERY ====================
+
+  // Discover leads by industry + location
+  app.post('/api/discover', asyncHandler(async (req, res) => {
+    const { query, location, limit = 10, autoProcess = false } = req.body;
+
+    if (!query) {
+      throw ApiError.badRequest('Query is required (e.g., "plumbers", "restaurants")');
+    }
+
+    log.info('Starting lead discovery', { query, location, limit });
+
+    // Try to load lead finder
+    let leads = [];
+    try {
+      const { default: LeadFinder } = await import('./leadFinder.js');
+      const finder = new LeadFinder();
+      leads = await finder.findLeads(query, {
+        locations: location ? [location] : ['Denver, CO'],
+        limit: parseInt(limit)
+      });
+    } catch (err) {
+      log.warn('LeadFinder failed, trying Google Places', { error: err.message });
+
+      // Fallback to Google Places
+      try {
+        const { GooglePlacesClient } = await import('./googlePlaces.js');
+        const places = new GooglePlacesClient();
+        const searchQuery = location ? `${query} in ${location}` : query;
+        leads = await places.searchBusinesses(searchQuery, { limit: parseInt(limit) });
+      } catch (placesErr) {
+        throw ApiError.badRequest(`Discovery failed: ${err.message}. Google Places: ${placesErr.message}`);
+      }
+    }
+
+    // Qualify leads
+    let qualifiedLeads = leads;
+    try {
+      const { LeadQualifier } = await import('./leadQualifier.js');
+      const qualifier = new LeadQualifier({ requireContact: false });
+      qualifiedLeads = leads.map(lead => ({
+        ...lead,
+        qualification: qualifier.qualifyLead(lead)
+      }));
+    } catch (err) {
+      log.warn('Qualification failed', { error: err.message });
+    }
+
+    // Save leads to database
+    const savedLeads = [];
+    for (const lead of qualifiedLeads) {
+      try {
+        const saved = await db.createLead({
+          url: lead.website || lead.url,
+          businessName: lead.name || lead.businessName,
+          email: lead.email,
+          phone: lead.phone,
+          industry: query,
+          country: location,
+          status: 'discovered',
+          score: lead.qualification?.score,
+          qualified: lead.qualification?.qualified
+        });
+        savedLeads.push(saved);
+      } catch (err) {
+        log.debug('Failed to save lead', { error: err.message });
+      }
+    }
+
+    log.info('Discovery complete', {
+      found: leads.length,
+      saved: savedLeads.length
+    });
+
+    res.json({
+      success: true,
+      query,
+      location,
+      found: leads.length,
+      saved: savedLeads.length,
+      leads: savedLeads
+    });
+  }));
 
   // Run pipeline for a URL (async)
   app.post('/api/pipeline', async (req, res) => {
@@ -217,21 +587,25 @@ export function createServer(config = {}) {
       log.info(`URL: ${url}`);
       log.info(`skipPolish: ${skipPolish}, skipEmail: ${skipEmail}`);
 
-      if (!url) {
-        log.warn('Pipeline rejected: No URL provided');
-        return res.status(400).json({ error: 'URL required' });
+      // Validate URL
+      const urlResult = validateUrl(url);
+      if (!urlResult.valid) {
+        log.warn('Pipeline rejected: Invalid URL', { error: urlResult.error });
+        return res.status(400).json({ error: urlResult.error });
       }
+
+      const validatedUrl = urlResult.normalized;
 
       // Return immediately, process in background
       log.info('Returning response to client, starting background pipeline...');
-      res.json({ message: 'Pipeline started', url, status: 'processing' });
+      res.json({ message: 'Pipeline started', url: validatedUrl, status: 'processing' });
 
       // Run pipeline in background
       log.info('Importing pipeline module...');
       const { rebuildAndDeploy } = await import('./pipeline.js');
 
       log.info('Starting rebuildAndDeploy...');
-      rebuildAndDeploy(url, { skipPolish })
+      rebuildAndDeploy(validatedUrl, { skipPolish })
         .then(async result => {
           log.info('=== PIPELINE COMPLETE ===');
           log.info(`Business: ${result.siteData?.businessName}`);
@@ -253,17 +627,61 @@ export function createServer(config = {}) {
             }
           }
         })
-        .catch(error => {
+        .catch(async error => {
           log.error('=== PIPELINE FAILED ===');
-          log.error(`URL: ${url}`);
+          log.error(`URL: ${validatedUrl}`);
           log.error(`Error: ${error.message}`);
           log.error(`Stack: ${error.stack}`);
+
+          // Log error to database
+          try {
+            await db.logPipelineError({
+              url: validatedUrl,
+              error: error.message,
+              stack: error.stack,
+              step: error.step || 'unknown'
+            });
+
+            // Update lead status to error if lead exists
+            const lead = await db.getLeadByUrl(validatedUrl);
+            if (lead) {
+              await db.updateLead(lead.id, {
+                status: 'error',
+                lastError: error.message
+              });
+            }
+          } catch (dbError) {
+            log.error('Failed to log pipeline error to database', { error: dbError.message });
+          }
         });
 
     } catch (error) {
       log.error('Pipeline endpoint error:', { error: error.message });
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // ==================== ERROR MIDDLEWARE ====================
+
+  // Centralized error handler
+  app.use((err, req, res, next) => {
+    // Log the error
+    log.error('Request error', {
+      path: req.path,
+      method: req.method,
+      error: err.message,
+      code: err.code,
+      stack: err.stack
+    });
+
+    // Determine status code
+    const statusCode = err.statusCode || 500;
+    const code = err.code || 'INTERNAL_ERROR';
+
+    res.status(statusCode).json({
+      error: err.message,
+      code
+    });
   });
 
   // Fallback to dashboard for SPA routing
@@ -279,9 +697,12 @@ const isMain = import.meta.url && process.argv[1] && fileURLToPath(import.meta.u
 if (isMain) {
   const { config } = await import('dotenv');
   config();
-  
+
+  // Validate startup configuration
+  const { features } = validateStartup(log);
+
   const port = process.env.PORT || CONFIG.server.defaultPort;
-  const app = createServer();
+  const app = createServer({ features });
 
   app.listen(port, () => {
     log.info(`Dashboard running at http://localhost:${port}`);

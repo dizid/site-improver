@@ -6,16 +6,9 @@
 
 # TODO
 
-- 📝 **Smart Checklist** - 6 categories with 30+ pre-built marketing tasks
-- 🎯 **Progress Tracking** - Visual progress bars and completion stats
-- 💾 **Database Persistence** - All data saved to Supabase
-- 🔐 **Authentication** - Secure signup/login with email
-- 🤖 **Grok AI Integration** - AI-powered marketing advice generation
-- 🎨 **Beautiful UI** - Tailwind CSS v4 responsive design
-- 📤 **Export** - Export data as Markdown or JSON
-
 **Technology Stack**: 
-React 1? (explain)
+vue 3, vite, netlify
+
 
 
 **Architecture**: Serverless

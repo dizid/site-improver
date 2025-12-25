@@ -74,6 +74,81 @@ export function normalizeUrl(url) {
 }
 
 /**
+ * Validate a URL format
+ * @param {string} url - URL to validate
+ * @returns {{ valid: boolean, normalized?: string, error?: string }}
+ */
+export function validateUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return { valid: false, error: 'URL is required' };
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'URL is required' };
+  }
+
+  try {
+    // Add protocol if missing
+    const withProtocol = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? trimmed
+      : `https://${trimmed}`;
+
+    const parsed = new URL(withProtocol);
+
+    // Must be http or https
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, error: 'URL must use http or https protocol' };
+    }
+
+    // Must have a valid domain (contains at least one dot)
+    if (!parsed.hostname.includes('.')) {
+      return { valid: false, error: 'Invalid domain format' };
+    }
+
+    // Reject localhost and IP addresses for business URLs
+    if (parsed.hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(parsed.hostname)) {
+      return { valid: false, error: 'Local addresses not allowed' };
+    }
+
+    return { valid: true, normalized: parsed.href.replace(/\/$/, '') };
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+}
+
+/**
+ * Validate an email address format
+ * @param {string} email - Email to validate
+ * @returns {{ valid: boolean, error?: string }}
+ */
+export function validateEmail(email) {
+  if (!email || typeof email !== 'string') {
+    return { valid: false, error: 'Email is required' };
+  }
+
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed) {
+    return { valid: false, error: 'Email is required' };
+  }
+
+  // RFC 5322 compliant regex (simplified but robust)
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+  if (!emailRegex.test(trimmed)) {
+    return { valid: false, error: 'Invalid email format' };
+  }
+
+  // Must have at least one dot in domain part
+  const [, domain] = trimmed.split('@');
+  if (!domain || !domain.includes('.')) {
+    return { valid: false, error: 'Invalid email domain' };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Check if two URLs point to the same site
  * @param {string} url1 - First URL
  * @param {string} url2 - Second URL
@@ -153,6 +228,8 @@ export default {
   safeParseJsonArray,
   safeParseJsonObject,
   normalizeUrl,
+  validateUrl,
+  validateEmail,
   isSameUrl,
   truncate,
   slugify,

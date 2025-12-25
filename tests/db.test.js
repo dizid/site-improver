@@ -31,12 +31,18 @@ describe('db', () => {
     }
   ];
 
+  // New db format stores data in { leads: [], deployments: [] }
+  const mockDbData = {
+    leads: [],
+    deployments: mockDeployments
+  };
+
   beforeEach(async () => {
     // Reset all mocks before each test
     vi.resetAllMocks();
 
-    // Set up default mock behavior
-    fs.readFile.mockResolvedValue(JSON.stringify(mockDeployments));
+    // Set up default mock behavior - use new format
+    fs.readFile.mockResolvedValue(JSON.stringify(mockDbData));
     fs.writeFile.mockResolvedValue(undefined);
 
     // Set environment variable for test db path
@@ -54,12 +60,16 @@ describe('db', () => {
   describe('getDeployments', () => {
     it('should return all deployments', async () => {
       const deployments = await db.getDeployments();
-      expect(deployments).toEqual(mockDeployments);
+      // Deployments are sorted by createdAt desc, so check length and content
+      expect(deployments.length).toBe(mockDeployments.length);
+      expect(deployments.map(d => d.siteId).sort()).toEqual(mockDeployments.map(d => d.siteId).sort());
       expect(fs.readFile).toHaveBeenCalledWith(testDbPath, 'utf-8');
     });
 
     it('should return empty array when file does not exist', async () => {
-      fs.readFile.mockRejectedValue(new Error('ENOENT'));
+      const error = new Error('ENOENT');
+      error.code = 'ENOENT';
+      fs.readFile.mockRejectedValue(error);
 
       const deployments = await db.getDeployments();
       expect(deployments).toEqual([]);
@@ -69,6 +79,7 @@ describe('db', () => {
       fs.readFile.mockResolvedValue('invalid json');
 
       const deployments = await db.getDeployments();
+      // Returns empty since it falls back to { leads: [], deployments: [] }
       expect(deployments).toEqual([]);
     });
   });
@@ -79,9 +90,9 @@ describe('db', () => {
       expect(deployment).toEqual(mockDeployments[0]);
     });
 
-    it('should return undefined for non-existent siteId', async () => {
+    it('should return null for non-existent siteId', async () => {
       const deployment = await db.getDeployment('non-existent');
-      expect(deployment).toBeUndefined();
+      expect(deployment).toBeNull();
     });
   });
 
@@ -113,7 +124,9 @@ describe('db', () => {
 
       const writeCall = fs.writeFile.mock.calls[0];
       const savedData = JSON.parse(writeCall[1]);
-      const saved = savedData.find(d => d.siteId === 'site-new');
+      // Data is now stored in { leads: [], deployments: [] } format
+      const deploymentsArray = savedData.deployments || savedData;
+      const saved = deploymentsArray.find(d => d.siteId === 'site-new');
 
       expect(saved.createdAt).toBeDefined();
     });
@@ -125,7 +138,9 @@ describe('db', () => {
 
       const writeCall = fs.writeFile.mock.calls[0];
       const savedData = JSON.parse(writeCall[1]);
-      const updated = savedData.find(d => d.siteId === 'site-1');
+      // Data is now stored in { leads: [], deployments: [] } format
+      const deploymentsArray = savedData.deployments || savedData;
+      const updated = deploymentsArray.find(d => d.siteId === 'site-1');
 
       expect(updated.status).toBe('converted');
       expect(updated.updatedAt).toBeDefined();
@@ -151,9 +166,11 @@ describe('db', () => {
 
       const writeCall = fs.writeFile.mock.calls[0];
       const savedData = JSON.parse(writeCall[1]);
+      // Data is now stored in { leads: [], deployments: [] } format
+      const deploymentsArray = savedData.deployments || savedData;
 
-      expect(savedData.find(d => d.siteId === 'site-1')).toBeUndefined();
-      expect(savedData.length).toBe(mockDeployments.length - 1);
+      expect(deploymentsArray.find(d => d.siteId === 'site-1')).toBeUndefined();
+      expect(deploymentsArray.length).toBe(mockDeployments.length - 1);
     });
   });
 });

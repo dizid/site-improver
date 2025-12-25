@@ -19,6 +19,7 @@
     "cleanup": "node src/cli.js cleanup",
     "list": "node src/cli.js list",
     "find": "node src/cli.js find",
+    "discover": "node src/cli.js discover",
     "score": "node src/cli.js score",
     "batch": "node src/cli.js batch",
     "process-csv": "node src/cli.js process-csv",
@@ -40,6 +41,7 @@
     "commander": "^12.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "firebase-admin": "^13.6.0",
     "handlebars": "^4.7.8",
     "playwright": "^1.48.0",
     "resend": "^4.0.0"

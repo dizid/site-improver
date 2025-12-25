@@ -264,6 +264,187 @@ program
     }
   });
 
+// Discover command - find, qualify, and score leads
+program
+  .command('discover <query>')
+  .description('Discover leads: find → qualify → score (no processing)')
+  .option('-l, --locations <locations>', 'Comma-separated locations', 'Denver, CO')
+  .option('-n, --limit <number>', 'Leads per location', '20')
+  .option('--max-score <number>', 'Max score threshold for targets', '65')
+  .option('--strategy <strategy>', 'Scoring strategy: pageSpeed, browser, hybrid', 'hybrid')
+  .option('-o, --output <file>', 'Save results to JSON file')
+  .option('--save', 'Save qualified leads to database')
+  .action(async (query, options) => {
+    if (!process.env.OUTSCRAPER_API_KEY) {
+      console.error('❌ OUTSCRAPER_API_KEY not set');
+      console.log('\nGet an API key at: https://outscraper.com/');
+      process.exit(1);
+    }
+
+    const { default: LeadFinder } = await import('./leadFinder.js');
+    const { default: PageSpeedScorer } = await import('./pageSpeedScorer.js');
+    const { LeadQualifier } = await import('./leadQualifier.js');
+    const { default: SiteScorer } = await import('./siteScorer.js');
+    const { saveLead } = await import('./db.js');
+
+    const locations = options.locations.split(',').map(l => l.trim());
+    const maxScore = parseInt(options.maxScore);
+
+    console.log('\n' + '='.repeat(60));
+    console.log('🔍 LEAD DISCOVERY');
+    console.log('='.repeat(60));
+    console.log(`\n   Query: ${query}`);
+    console.log(`   Locations: ${locations.join(', ')}`);
+    console.log(`   Strategy: ${options.strategy}`);
+
+    // Step 1: Find leads
+    console.log('\n📍 Step 1: Finding leads...\n');
+    const finder = new LeadFinder(process.env.OUTSCRAPER_API_KEY);
+    const leads = await finder.searchIndustry(query, locations, parseInt(options.limit));
+    console.log(`   Found: ${leads.length} businesses`);
+
+    if (leads.length === 0) {
+      console.log('\n⚠️  No leads found. Try different query or location.');
+      return;
+    }
+
+    // Step 2: Qualify
+    console.log('\n🔍 Step 2: Qualifying leads...\n');
+    const qualifier = new LeadQualifier({ requireContact: true });
+    const { qualified, disqualified, stats: qualStats } = qualifier.qualifyBatch(leads);
+    const qualifiedLeads = qualified.map(q => q.lead || q);
+
+    console.log(`   Qualified: ${qualifiedLeads.length}/${leads.length}`);
+    if (Object.keys(qualStats.disqualifyReasons).length > 0) {
+      console.log('   Rejections:');
+      for (const [reason, count] of Object.entries(qualStats.disqualifyReasons)) {
+        console.log(`     • ${reason}: ${count}`);
+      }
+    }
+
+    if (qualifiedLeads.length === 0) {
+      console.log('\n⚠️  No qualified leads.');
+      return;
+    }
+
+    // Step 3: Score
+    console.log('\n📊 Step 3: Scoring websites...\n');
+    const pageSpeedScorer = new PageSpeedScorer();
+    const siteScorer = new SiteScorer();
+    const results = [];
+
+    for (const lead of qualifiedLeads) {
+      if (!lead.website) continue;
+
+      let scoreResult = null;
+
+      // Try PageSpeed first (if hybrid or pageSpeed)
+      if (options.strategy === 'hybrid' || options.strategy === 'pageSpeed') {
+        try {
+          const psResult = await pageSpeedScorer.assessTarget(lead.website);
+          if (psResult && psResult.targetScore !== undefined) {
+            scoreResult = {
+              score: psResult.targetScore,
+              pageSpeedScore: psResult.pageSpeedScore,
+              method: 'pageSpeed',
+              categories: psResult.categories
+            };
+          }
+        } catch (e) {
+          // Fall through to browser scoring
+        }
+      }
+
+      // Fallback to browser
+      if (!scoreResult && (options.strategy === 'hybrid' || options.strategy === 'browser')) {
+        try {
+          const browserResult = await siteScorer.score(lead.website);
+          scoreResult = {
+            score: browserResult.score,
+            method: 'browser',
+            issues: browserResult.issues
+          };
+        } catch (e) {
+          scoreResult = { score: 50, method: 'fallback' };
+        }
+      }
+
+      const isTarget = scoreResult.score < maxScore;
+      const isPrime = scoreResult.score < 35;
+      const classification = isPrime ? 'prime_target' : isTarget ? 'target' : 'skip';
+
+      results.push({
+        ...lead,
+        siteScore: scoreResult.score,
+        scoringMethod: scoreResult.method,
+        pageSpeedScore: scoreResult.pageSpeedScore,
+        classification,
+        isTarget,
+        isPrimeTarget: isPrime
+      });
+
+      const icon = isPrime ? '🎯' : isTarget ? '✅' : '⏭️';
+      console.log(`   ${icon} ${lead.name}: ${scoreResult.score} (${scoreResult.method}) → ${classification}`);
+    }
+
+    // Summary
+    const targets = results.filter(r => r.isTarget);
+    const primeTargets = results.filter(r => r.isPrimeTarget);
+
+    console.log('\n' + '='.repeat(60));
+    console.log('📋 SUMMARY');
+    console.log('='.repeat(60));
+    console.log(`\n   Total found: ${leads.length}`);
+    console.log(`   Qualified: ${qualifiedLeads.length}`);
+    console.log(`   Scored: ${results.length}`);
+    console.log(`   🎯 Prime targets: ${primeTargets.length}`);
+    console.log(`   ✅ All targets: ${targets.length}`);
+    console.log(`   ⏭️  Skipped: ${results.length - targets.length}`);
+
+    // Save to database if requested
+    if (options.save && targets.length > 0) {
+      console.log('\n💾 Saving to database...');
+      for (const target of targets) {
+        await saveLead({
+          ...target,
+          status: 'discovered',
+          source: 'discover_cli'
+        });
+      }
+      console.log(`   Saved ${targets.length} leads`);
+    }
+
+    // Output to file if requested
+    if (options.output) {
+      await fs.writeFile(options.output, JSON.stringify({
+        query,
+        locations,
+        timestamp: new Date().toISOString(),
+        stats: {
+          found: leads.length,
+          qualified: qualifiedLeads.length,
+          targets: targets.length,
+          primeTargets: primeTargets.length
+        },
+        targets,
+        all: results
+      }, null, 2));
+      console.log(`\n💾 Saved to ${options.output}`);
+    }
+
+    // Show top targets
+    if (targets.length > 0) {
+      console.log('\n🎯 Top Targets:');
+      targets.slice(0, 5).forEach((t, i) => {
+        console.log(`   ${i + 1}. ${t.name} (score: ${t.siteScore})`);
+        console.log(`      ${t.website}`);
+        console.log(`      ${t.email || t.phone || 'No contact'}`);
+      });
+    }
+
+    console.log('');
+  });
+
 // Score sites command
 program
   .command('score <urls...>')

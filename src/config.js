@@ -29,6 +29,9 @@ export const CONFIG = {
 
   // Site scoring configuration
   scoring: {
+    // Scoring strategy: 'pageSpeed' (API), 'browser' (Playwright), 'hybrid' (API first, fallback)
+    strategy: 'hybrid',
+
     // Speed thresholds in ms (maps to score percentages)
     speedThresholds: {
       excellent: 2000,        // <= 2s = 100%
@@ -36,7 +39,8 @@ export const CONFIG = {
       fair: 6000,             // <= 6s = 50%
       poor: 10000             // <= 10s = 25%, > 10s = 0%
     },
-    // Score weights (must sum to 100)
+
+    // Score weights for browser-based scoring (must sum to 100)
     weights: {
       https: 15,
       speed: 20,
@@ -44,9 +48,32 @@ export const CONFIG = {
       modern: 25,
       seo: 20
     },
-    // Target thresholds
-    maxTargetScore: 60,       // Sites below this are targets
-    primeTargetScore: 40      // Sites below this are prime targets
+
+    // PageSpeed weights (for combined score calculation)
+    pageSpeedWeights: {
+      performance: 0.35,
+      seo: 0.25,
+      accessibility: 0.20,
+      bestPractices: 0.20
+    },
+
+    // Target thresholds (lower score = worse site = better target)
+    primeTargetScore: 35,     // Sites below this are prime targets (best opportunities)
+    maxTargetScore: 65,       // Sites below this are worth pursuing
+    skipScore: 75             // Sites above this are too good, skip them
+  },
+
+  // Lead qualification configuration
+  qualification: {
+    requireContact: true,     // Must have email or phone
+    filterMarkets: false,     // Filter by target markets
+    targetMarkets: ['NL', 'UK'],
+    // Social media domains to filter out
+    socialDomains: [
+      'facebook.com', 'fb.com', 'instagram.com', 'twitter.com', 'x.com',
+      'linkedin.com', 'youtube.com', 'tiktok.com', 'pinterest.com',
+      'yelp.com', 'tripadvisor.com'
+    ]
   },
 
   // Batch processing
@@ -104,12 +131,30 @@ export function getEnvConfig() {
     resendApiKey: process.env.RESEND_API_KEY,
     fromEmail: process.env.FROM_EMAIL,
     outscraperApiKey: process.env.OUTSCRAPER_API_KEY,
+    googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
+    pageSpeedApiKey: process.env.PAGESPEED_API_KEY || process.env.GOOGLE_PLACES_API_KEY,
     port: parseInt(process.env.PORT, 10) || CONFIG.server.defaultPort,
     dbPath: process.env.DB_PATH || CONFIG.database.defaultPath,
     logLevel: process.env.LOG_LEVEL || 'info',
     nodeEnv: process.env.NODE_ENV || 'development',
     isTest: process.env.NODE_ENV === 'test',
     isProduction: process.env.NODE_ENV === 'production'
+  };
+}
+
+/**
+ * Get feature availability based on configured API keys
+ * @returns {Object} Feature flags indicating what's available
+ */
+export function getFeatures() {
+  const env = getEnvConfig();
+  return {
+    aiPolish: !!env.anthropicApiKey,
+    deploy: !!env.netlifyToken,
+    email: !!(env.resendApiKey && env.fromEmail),
+    leadFinder: !!env.outscraperApiKey,
+    googlePlaces: !!env.googlePlacesApiKey,
+    pageSpeed: !!env.pageSpeedApiKey
   };
 }
 
@@ -127,7 +172,9 @@ export function validateEnv(required = []) {
     NETLIFY_AUTH_TOKEN: env.netlifyToken,
     RESEND_API_KEY: env.resendApiKey,
     FROM_EMAIL: env.fromEmail,
-    OUTSCRAPER_API_KEY: env.outscraperApiKey
+    OUTSCRAPER_API_KEY: env.outscraperApiKey,
+    GOOGLE_PLACES_API_KEY: env.googlePlacesApiKey,
+    PAGESPEED_API_KEY: env.pageSpeedApiKey
   };
 
   for (const varName of required) {
@@ -140,6 +187,35 @@ export function validateEnv(required = []) {
     valid: missing.length === 0,
     missing
   };
+}
+
+/**
+ * Validate startup configuration and log feature availability
+ * @param {Object} logger - Logger instance with info/warn/error methods
+ * @returns {{ features: Object, warnings: string[] }}
+ */
+export function validateStartup(logger) {
+  const features = getFeatures();
+  const warnings = [];
+
+  // Log feature availability
+  logger.info('Feature availability:', features);
+
+  // Warn about missing optional features
+  if (!features.aiPolish) {
+    warnings.push('AI polish disabled - ANTHROPIC_API_KEY not set');
+  }
+  if (!features.deploy) {
+    warnings.push('Netlify deploy disabled - NETLIFY_AUTH_TOKEN not set');
+  }
+  if (!features.email) {
+    warnings.push('Email outreach disabled - RESEND_API_KEY or FROM_EMAIL not set');
+  }
+
+  // Log warnings
+  warnings.forEach(w => logger.warn(w));
+
+  return { features, warnings };
 }
 
 /**
