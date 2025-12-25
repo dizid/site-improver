@@ -2,7 +2,7 @@
 // Batch processor: Find leads → Qualify → Score → Process pipeline
 
 import fs from 'fs/promises';
-import LeadFinder from './leadFinder.js';
+import { createLeadFinder } from './leadSource.js';
 import SiteScorer from './siteScorer.js';
 import PageSpeedScorer from './pageSpeedScorer.js';
 import { LeadQualifier } from './leadQualifier.js';
@@ -18,7 +18,6 @@ const log = logger.child('batch');
 export class BatchProcessor {
   constructor(config = {}) {
     this.config = {
-      outscraperKey: config.outscraperKey || process.env.OUTSCRAPER_API_KEY,
       netlifyToken: config.netlifyToken || process.env.NETLIFY_AUTH_TOKEN,
       resendKey: config.resendKey || process.env.RESEND_API_KEY,
       fromEmail: config.fromEmail || process.env.FROM_EMAIL,
@@ -28,14 +27,19 @@ export class BatchProcessor {
       skipEmail: config.skipEmail || false,
       skipQualify: config.skipQualify || false,
       scoringStrategy: config.scoringStrategy || 'hybrid', // 'pageSpeed', 'browser', or 'hybrid'
+      leadSource: config.leadSource || process.env.LEAD_SOURCE || 'auto', // 'outscraper', 'googlePlaces', or 'auto'
       concurrency: config.concurrency || CONFIG.batch.defaultConcurrency,
       delayBetween: config.delayBetween || CONFIG.batch.defaultDelay
     };
 
     this.features = getFeatures();
 
-    if (this.config.outscraperKey) {
-      this.leadFinder = new LeadFinder(this.config.outscraperKey);
+    // Initialize lead finder using factory (auto-selects based on available API keys)
+    try {
+      this.leadFinder = createLeadFinder(this.config.leadSource);
+    } catch (error) {
+      log.warn('No lead finder available', { error: error.message });
+      this.leadFinder = null;
     }
 
     // Site scoring - browser-based (fallback)

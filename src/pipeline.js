@@ -123,18 +123,23 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     const city = extractCity(siteData.address);
 
     // Save to database
-    await saveDeployment({
-      siteId: deployment.siteId,
-      siteName: deployment.siteName,
-      original: targetUrl,
-      preview: deployment.url,
-      businessName: siteData.businessName,
-      industry,
-      phone: siteData.phone,
-      email: siteData.email,
-      address: siteData.address,
-      city
-    });
+    try {
+      await saveDeployment({
+        siteId: deployment.siteId,
+        siteName: deployment.siteName,
+        original: targetUrl,
+        preview: deployment.url,
+        businessName: siteData.businessName,
+        industry,
+        phone: siteData.phone,
+        email: siteData.email,
+        address: siteData.address,
+        city
+      });
+      log.info('Deployment saved to database', { siteId: deployment.siteId });
+    } catch (saveError) {
+      log.error('Failed to save deployment', { error: saveError.message, siteId: deployment.siteId });
+    }
   }
 
   log.success(`Complete in ${duration}s`);

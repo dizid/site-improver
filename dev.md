@@ -12,3 +12,10 @@
 - `npm start` - Start dashboard server (port 3000)
 - `npm test` - Run test suite
 - `netlify dev` - Run with Netlify dev environment
+
+
+PAGESPEED_API_KEY=AIza...your-key
+GOOGLE_PLACES_API_KEY=AIzaSyBnHo0vrreEB0m8_m5F8okVhIRr8mA2P2o  # Can be same key if both APIs enabled
+
+Google maps api key: 
+AIzaSyBnHo0vrreEB0m8_m5F8okVhIRr8mA2P2o

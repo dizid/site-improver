@@ -60,7 +60,8 @@ export class LeadFinder {
       category: biz.category || biz.type || null,
       placeId: biz.place_id || null,
       lat: biz.latitude,
-      lng: biz.longitude
+      lng: biz.longitude,
+      source: 'outscraper'
     }));
   }
 

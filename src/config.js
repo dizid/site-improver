@@ -133,6 +133,7 @@ export function getEnvConfig() {
     outscraperApiKey: process.env.OUTSCRAPER_API_KEY,
     googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
     pageSpeedApiKey: process.env.PAGESPEED_API_KEY || process.env.GOOGLE_PLACES_API_KEY,
+    leadSource: process.env.LEAD_SOURCE || 'auto', // 'outscraper', 'googlePlaces', or 'auto'
     port: parseInt(process.env.PORT, 10) || CONFIG.server.defaultPort,
     dbPath: process.env.DB_PATH || CONFIG.database.defaultPath,
     logLevel: process.env.LOG_LEVEL || 'info',

@@ -103,12 +103,50 @@
       <!-- Demo / Process URL Section - Prominent for demos -->
       <section id="demo" class="section demo-section">
         <div class="section-header">
-          <h2>🚀 Process Website</h2>
-          <span class="section-badge">Demo Mode</span>
+          <h2>Process Website</h2>
+          <span class="section-badge">Quick Start</span>
         </div>
         <p class="section-description">
-          Enter any website URL to see the magic. We'll scrape it, redesign it, and deploy a preview in ~30 seconds.
+          Enter a website URL to analyze and rebuild. Preview deploys in approximately 30 seconds.
         </p>
+
+        <!-- Pipeline Progress Bar -->
+        <div v-if="pipelineProgress.active" class="pipeline-progress">
+          <div class="progress-header">
+            <span class="progress-url">{{ pipelineProgress.url }}</span>
+            <span class="progress-time">{{ pipelineProgress.elapsed }}s</span>
+          </div>
+          <div class="progress-stages">
+            <div
+              v-for="(stage, index) in pipelineStagesConfig"
+              :key="stage.id"
+              :class="['progress-stage', {
+                'completed': pipelineProgress.stageIndex > index,
+                'active': pipelineProgress.stageIndex === index,
+                'pending': pipelineProgress.stageIndex < index
+              }]"
+            >
+              <div class="stage-icon">
+                <span v-if="pipelineProgress.stageIndex > index" class="check-icon">&#10003;</span>
+                <span v-else-if="pipelineProgress.stageIndex === index" class="spinner-icon"></span>
+                <span v-else class="stage-number">{{ index + 1 }}</span>
+              </div>
+              <div class="stage-label">{{ stage.label }}</div>
+            </div>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar" :style="{ width: pipelineProgress.percent + '%' }"></div>
+          </div>
+          <div v-if="pipelineProgress.error" class="progress-error">
+            {{ pipelineProgress.error }}
+          </div>
+          <div v-if="pipelineProgress.previewUrl" class="progress-complete">
+            <a :href="pipelineProgress.previewUrl" target="_blank" class="btn btn-primary">
+              View Preview
+            </a>
+          </div>
+        </div>
+
         <form @submit.prevent="handleNewLead" class="demo-form" novalidate>
           <div class="demo-input-group">
             <input
@@ -132,7 +170,7 @@
               <span v-if="submitting" class="spinner spinner-sm">
                 <span class="spinner-circle"></span>
               </span>
-              <span>{{ submitting ? 'Building...' : '✨ Transform Site' }}</span>
+              <span>{{ submitting ? 'Building...' : 'Transform Site' }}</span>
             </button>
           </div>
           <span v-if="urlError" id="url-error" class="field-error" role="alert">
@@ -150,10 +188,10 @@
       <!-- Find Leads Section -->
       <section id="find-leads" class="section">
         <div class="section-header">
-          <h2>🔍 Find Leads</h2>
+          <h2>Find Leads</h2>
         </div>
         <p class="section-description">
-          Search for businesses by industry and location. We'll find websites that could use an upgrade.
+          Search for businesses by industry and location to discover potential clients.
         </p>
         <form @submit.prevent="handleDiscover" class="discover-form" novalidate>
           <div class="discover-inputs">
@@ -197,7 +235,7 @@
             <span v-if="discovering" class="spinner spinner-sm">
               <span class="spinner-circle"></span>
             </span>
-            <span>{{ discovering ? 'Searching...' : '🔎 Find Leads' }}</span>
+            <span>{{ discovering ? 'Searching...' : 'Find Leads' }}</span>
           </button>
         </form>
         <div v-if="discoverResults" class="discover-results">
@@ -340,7 +378,7 @@
                       :disabled="lead._loading"
                       title="Download HTML for handover"
                     >
-                      ⬇ Export
+                      Export
                     </button>
 
                     <!-- Convert button for deployed/emailing -->
@@ -351,7 +389,7 @@
                       :disabled="lead._loading"
                       title="Mark as converted (paid)"
                     >
-                      💰 Convert
+                      Convert
                     </button>
 
                     <button
@@ -424,6 +462,29 @@ const discoverLocation = ref('');
 const discoverLimit = ref('10');
 const discovering = ref(false);
 const discoverResults = ref(null);
+
+// Pipeline progress state
+const pipelineProgress = ref({
+  active: false,
+  url: '',
+  stageIndex: 0,
+  percent: 0,
+  elapsed: 0,
+  error: null,
+  previewUrl: null,
+  siteId: null
+});
+
+// Pipeline stages configuration
+const pipelineStagesConfig = [
+  { id: 'scraping', label: 'Scraping' },
+  { id: 'building', label: 'Building' },
+  { id: 'deploying', label: 'Deploying' },
+  { id: 'complete', label: 'Complete' }
+];
+
+let progressInterval = null;
+let progressPollInterval = null;
 
 // Computed
 const filteredLeads = computed(() => {
@@ -539,24 +600,130 @@ async function handleNewLead() {
   submitting.value = true;
   urlError.value = '';
 
+  // Start progress tracking
+  startProgress(newLeadUrl.value);
+
   try {
     console.log('[Pipeline] Starting pipeline for:', newLeadUrl.value);
-    await api.post('/api/pipeline', {
+    const response = await api.post('/api/pipeline', {
       url: newLeadUrl.value,
       skipEmail: skipEmail.value
     });
 
+    // Store site ID for polling
+    if (response && response.siteId) {
+      pipelineProgress.value.siteId = response.siteId;
+    }
+
     newLeadUrl.value = '';
     showToast('Pipeline started! Processing your lead...', 'success');
 
-    // Poll for updates
-    setTimeout(fetchData, 5000);
-    setTimeout(fetchData, 15000);
-    setTimeout(fetchData, 30000);
+    // Start polling for status updates
+    startProgressPolling();
+
   } catch (err) {
+    pipelineProgress.value.error = err.message;
     showToast(err.message, 'error');
+    stopProgress();
   } finally {
     submitting.value = false;
+  }
+}
+
+function startProgress(url) {
+  // Reset progress state
+  pipelineProgress.value = {
+    active: true,
+    url: url,
+    stageIndex: 0,
+    percent: 5,
+    elapsed: 0,
+    error: null,
+    previewUrl: null,
+    siteId: null
+  };
+
+  // Start elapsed time counter
+  const startTime = Date.now();
+  progressInterval = setInterval(() => {
+    pipelineProgress.value.elapsed = Math.floor((Date.now() - startTime) / 1000);
+  }, 1000);
+}
+
+function startProgressPolling() {
+  // Poll for status updates every 2 seconds
+  progressPollInterval = setInterval(async () => {
+    try {
+      await fetchData();
+
+      // Check for newly deployed lead matching our URL
+      const matchingLead = leads.value.find(l =>
+        l.originalUrl === pipelineProgress.value.url ||
+        l.siteId === pipelineProgress.value.siteId
+      );
+
+      if (matchingLead) {
+        updateProgressFromStatus(matchingLead.status, matchingLead);
+      }
+    } catch (e) {
+      console.error('Progress poll error:', e);
+    }
+  }, 2000);
+
+  // Auto-advance stages for visual feedback while waiting
+  setTimeout(() => {
+    if (pipelineProgress.value.active && pipelineProgress.value.stageIndex === 0) {
+      pipelineProgress.value.stageIndex = 1;
+      pipelineProgress.value.percent = 35;
+    }
+  }, 5000);
+
+  setTimeout(() => {
+    if (pipelineProgress.value.active && pipelineProgress.value.stageIndex === 1) {
+      pipelineProgress.value.stageIndex = 2;
+      pipelineProgress.value.percent = 65;
+    }
+  }, 15000);
+}
+
+function updateProgressFromStatus(status, lead) {
+  const statusToStage = {
+    'discovered': 0, 'scoring': 0, 'qualified': 0,
+    'queued': 0, 'scraping': 0, 'scraped': 1,
+    'building': 1, 'deploying': 2,
+    'deployed': 3, 'emailing': 3, 'converted': 3
+  };
+
+  const stageIndex = statusToStage[status] ?? pipelineProgress.value.stageIndex;
+  const percent = Math.min(95, (stageIndex + 1) * 25);
+
+  pipelineProgress.value.stageIndex = stageIndex;
+  pipelineProgress.value.percent = percent;
+
+  // Check if complete
+  if (status === 'deployed' || status === 'emailing') {
+    pipelineProgress.value.stageIndex = 3;
+    pipelineProgress.value.percent = 100;
+    pipelineProgress.value.previewUrl = lead.preview || lead.previewUrl;
+    stopProgress();
+    showToast('Site deployed successfully!', 'success');
+  }
+
+  // Check for error
+  if (status === 'error' || lead.lastError) {
+    pipelineProgress.value.error = lead.lastError || 'Pipeline failed';
+    stopProgress();
+  }
+}
+
+function stopProgress() {
+  if (progressInterval) {
+    clearInterval(progressInterval);
+    progressInterval = null;
+  }
+  if (progressPollInterval) {
+    clearInterval(progressPollInterval);
+    progressPollInterval = null;
   }
 }
 
@@ -811,8 +978,8 @@ onUnmounted(() => {
 
 /* Demo Section Styles */
 .demo-section {
-  background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
-  color: white;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 2rem;
 }
@@ -823,12 +990,12 @@ onUnmounted(() => {
 }
 
 .demo-section h2 {
-  color: white;
+  color: var(--color-text);
 }
 
 .section-badge {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
+  background: #dbeafe;
+  color: #1e40af;
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
   font-size: 0.75rem;
@@ -836,9 +1003,9 @@ onUnmounted(() => {
 }
 
 .section-description {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--color-text-light);
   margin-bottom: 1.5rem;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
 .demo-form {
@@ -854,27 +1021,27 @@ onUnmounted(() => {
 
 .demo-input {
   flex: 1;
-  padding: 1rem 1.25rem;
+  padding: 0.875rem 1rem;
   font-size: 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .demo-input::placeholder {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-light);
 }
 
 .demo-input:focus {
   outline: none;
-  border-color: white;
-  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .btn-large {
-  padding: 1rem 2rem;
-  font-size: 1rem;
+  padding: 0.875rem 1.5rem;
+  font-size: 0.95rem;
 }
 
 .demo-options {
@@ -883,7 +1050,149 @@ onUnmounted(() => {
 }
 
 .demo-options .checkbox-label {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-light);
+}
+
+/* Pipeline Progress */
+.pipeline-progress {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.progress-url {
+  font-weight: 500;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+}
+
+.progress-time {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-stages {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.progress-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+.progress-stage:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--color-border);
+}
+
+.progress-stage.completed:not(:last-child)::after {
+  background: var(--color-success);
+}
+
+.stage-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  color: var(--color-text-light);
+}
+
+.progress-stage.completed .stage-icon {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: white;
+}
+
+.progress-stage.active .stage-icon {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.check-icon {
+  font-size: 0.875rem;
+}
+
+.spinner-icon {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.stage-label {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  font-weight: 500;
+}
+
+.progress-stage.completed .stage-label,
+.progress-stage.active .stage-label {
+  color: var(--color-text);
+}
+
+.progress-bar-container {
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-success));
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.progress-error {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+
+.progress-complete {
+  margin-top: 1rem;
+  text-align: center;
 }
 
 /* Find Leads Section */
