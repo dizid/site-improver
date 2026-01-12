@@ -3,13 +3,130 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Site Improver Dashboard</title>
+
+  <!-- Primary Meta Tags -->
+  <title>Site Improver - Transform Outdated Websites</title>
+  <meta name="title" content="Site Improver - Transform Outdated Websites">
+  <meta name="description" content="AI-powered tool that transforms outdated small business websites into modern, high-converting landing pages. Scrape, analyze, and deploy in minutes.">
+  <meta name="keywords" content="website redesign, AI website builder, landing page generator, small business, web design automation">
+  <meta name="author" content="Site Improver">
+  <meta name="robots" content="index, follow">
+
+  <!-- Theme & PWA -->
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Site Improver">
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.svg">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://site-improver.netlify.app/">
+  <meta property="og:title" content="Site Improver - Transform Outdated Websites">
+  <meta property="og:description" content="AI-powered tool that transforms outdated small business websites into modern, high-converting landing pages.">
+  <meta property="og:image" content="/images/og-image.svg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name" content="Site Improver">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://site-improver.netlify.app/">
+  <meta name="twitter:title" content="Site Improver - Transform Outdated Websites">
+  <meta name="twitter:description" content="AI-powered tool that transforms outdated small business websites into modern, high-converting landing pages.">
+  <meta name="twitter:image" content="/images/twitter-card.svg">
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Preload critical assets -->
+  <link rel="preload" href="/favicon.svg" as="image" type="image/svg+xml">
+
+  <style>
+    /* Loading screen styles */
+    #app-loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%);
+      z-index: 9999;
+      transition: opacity 0.3s ease-out;
+    }
+    #app-loader.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .loader-logo {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 1.5rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .loader-text {
+      color: white;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    .loader-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.9; }
+    }
+  </style>
 </head>
 <body>
+  <!-- Loading screen -->
+  <div id="app-loader">
+    <svg class="loader-logo" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="24" cy="24" r="22" fill="white" fill-opacity="0.15"/>
+      <rect x="12" y="14" width="24" height="18" rx="2" fill="white" fill-opacity="0.2"/>
+      <rect x="12" y="14" width="24" height="4" rx="2" fill="white" fill-opacity="0.3"/>
+      <circle cx="15" cy="16" r="1" fill="white" fill-opacity="0.6"/>
+      <circle cx="18.5" cy="16" r="1" fill="white" fill-opacity="0.6"/>
+      <circle cx="22" cy="16" r="1" fill="white" fill-opacity="0.6"/>
+      <path d="M24 30V22M24 22L20 26M24 22L28 26" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M32 12L33 14L35 15L33 16L32 18L31 16L29 15L31 14L32 12Z" fill="white"/>
+    </svg>
+    <div class="loader-text">Site Improver</div>
+    <div class="loader-spinner"></div>
+  </div>
+
   <div id="app"></div>
+
   <script type="module" src="/src/main.js"></script>
+  <script>
+    // Remove loader once app is ready
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const loader = document.getElementById('app-loader');
+        if (loader) {
+          loader.classList.add('fade-out');
+          setTimeout(() => loader.remove(), 300);
+        }
+      }, 500);
+    });
+  </script>
 </body>
 </html>

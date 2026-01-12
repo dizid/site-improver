@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Background -->
+  <rect width="32" height="32" rx="6" fill="#2563eb"/>
+
+  <!-- Website frame (simplified) -->
+  <rect x="6" y="8" width="20" height="16" rx="2" fill="white" fill-opacity="0.25"/>
+  <rect x="6" y="8" width="20" height="4" rx="2" fill="white" fill-opacity="0.4"/>
+
+  <!-- Upward arrow -->
+  <path d="M16 22V14M16 14L12 18M16 14L20 18" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Sparkle -->
+  <circle cx="22" cy="7" r="2" fill="#fbbf24"/>
+</svg>

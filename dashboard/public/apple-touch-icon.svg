@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
+  <!-- Background -->
+  <rect width="180" height="180" rx="40" fill="#2563eb"/>
+
+  <!-- Website frame -->
+  <rect x="35" y="45" width="110" height="85" rx="8" fill="white" fill-opacity="0.25"/>
+  <rect x="35" y="45" width="110" height="20" rx="8" fill="white" fill-opacity="0.4"/>
+
+  <!-- Dots -->
+  <circle cx="50" cy="55" r="4" fill="white" fill-opacity="0.8"/>
+  <circle cx="65" cy="55" r="4" fill="white" fill-opacity="0.8"/>
+  <circle cx="80" cy="55" r="4" fill="white" fill-opacity="0.8"/>
+
+  <!-- Upward arrow -->
+  <path d="M90 120V85M90 85L70 105M90 85L110 105" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Sparkle -->
+  <circle cx="130" cy="35" r="12" fill="#fbbf24"/>
+</svg>

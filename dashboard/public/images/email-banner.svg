@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" fill="none">
+  <defs>
+    <linearGradient id="email-bg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1e40af"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="600" height="200" fill="url(#email-bg)"/>
+
+  <!-- Pattern dots -->
+  <g fill="white" fill-opacity="0.1">
+    <circle cx="50" cy="50" r="30"/>
+    <circle cx="550" cy="150" r="40"/>
+    <circle cx="500" cy="30" r="20"/>
+  </g>
+
+  <!-- Logo icon -->
+  <g transform="translate(40, 50)">
+    <rect width="100" height="100" rx="20" fill="white" fill-opacity="0.15"/>
+    <rect x="20" y="25" width="60" height="45" rx="4" fill="white" fill-opacity="0.3"/>
+    <rect x="20" y="25" width="60" height="10" rx="4" fill="white" fill-opacity="0.5"/>
+    <path d="M50 65V45M50 45L38 57M50 45L62 57" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Text -->
+  <text x="170" y="85" font-family="Inter, system-ui, sans-serif" font-size="36" font-weight="700" fill="white">
+    Site Improver
+  </text>
+  <text x="170" y="125" font-family="Inter, system-ui, sans-serif" font-size="18" fill="white" fill-opacity="0.85">
+    Your website could be so much better
+  </text>
+
+  <!-- CTA hint -->
+  <rect x="170" y="145" width="120" height="32" rx="16" fill="white" fill-opacity="0.2"/>
+  <text x="195" y="167" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500" fill="white">
+    See Preview
+  </text>
+</svg>

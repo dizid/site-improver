@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e40af"/>
+      <stop offset="50%" style="stop-color:#2563eb"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="white" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg-gradient)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <!-- Decorative circles -->
+  <circle cx="1100" cy="100" r="200" fill="white" fill-opacity="0.03"/>
+  <circle cx="100" cy="530" r="150" fill="white" fill-opacity="0.03"/>
+
+  <!-- Logo icon (larger) -->
+  <g transform="translate(100, 215)">
+    <rect width="200" height="200" rx="40" fill="white" fill-opacity="0.15"/>
+    <rect x="40" y="50" width="120" height="90" rx="8" fill="white" fill-opacity="0.3"/>
+    <rect x="40" y="50" width="120" height="20" rx="8" fill="white" fill-opacity="0.5"/>
+    <circle cx="55" cy="60" r="5" fill="white" fill-opacity="0.8"/>
+    <circle cx="72" cy="60" r="5" fill="white" fill-opacity="0.8"/>
+    <circle cx="89" cy="60" r="5" fill="white" fill-opacity="0.8"/>
+    <path d="M100 130V95M100 95L80 115M100 95L120 115" stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="150" cy="40" r="15" fill="#fbbf24"/>
+  </g>
+
+  <!-- Text -->
+  <text x="350" y="280" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="700" fill="white">
+    Site Improver
+  </text>
+  <text x="350" y="350" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="400" fill="white" fill-opacity="0.8">
+    Transform outdated websites into modern,
+  </text>
+  <text x="350" y="395" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="400" fill="white" fill-opacity="0.8">
+    high-converting landing pages
+  </text>
+
+  <!-- Features -->
+  <g transform="translate(350, 450)" font-family="Inter, system-ui, sans-serif" font-size="20" fill="white" fill-opacity="0.7">
+    <circle cx="8" cy="-6" r="8" fill="#22c55e"/>
+    <text x="25" y="0">AI-Powered</text>
+    <circle cx="188" cy="-6" r="8" fill="#22c55e"/>
+    <text x="205" y="0">Auto-Scraping</text>
+    <circle cx="388" cy="-6" r="8" fill="#22c55e"/>
+    <text x="405" y="0">Instant Preview</text>
+  </g>
+</svg>
