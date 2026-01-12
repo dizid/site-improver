@@ -200,7 +200,14 @@ Enhanced scoring using Google PageSpeed Insights API (`src/pageSpeedScorer.js`).
 
 ## Web Scraping
 
-Intelligent content extraction using Playwright headless browser and Cheerio HTML parsing.
+Serverless content extraction using Firecrawl API and Cheerio HTML parsing.
+
+### Scraper Architecture
+
+Uses **Firecrawl API** for serverless-compatible scraping:
+- No Playwright dependency (works on Netlify Functions)
+- Returns HTML + Markdown formats
+- Fast and reliable
 
 ### Identity Extraction
 
@@ -213,15 +220,58 @@ Intelligent content extraction using Playwright headless browser and Cheerio HTM
 - **Headlines** - H1, H2, H3 tags (max 10)
 - **Paragraphs** - Body text 50-1000 chars (max 10)
 - **Services** - List items from services sections (max 10)
-- **Testimonials** - Review/testimonial sections with author (max 5)
+- **Testimonials** - Enhanced multi-strategy extraction (see below)
+
+### Enhanced Testimonial Detection (NEW)
+
+6 detection strategies for comprehensive testimonial extraction:
+
+1. **Container Selectors** - `.testimonial`, `.review`, `.feedback`, `[data-review]`
+2. **Blockquotes** - Standard blockquote elements with author detection
+3. **Google Reviews Widget** - `[class*="google-review"]`, `[data-google-review]`
+4. **Yelp Reviews Widget** - `[class*="yelp-review"]`, `[data-yelp]`
+5. **TrustPilot Widget** - `[class*="trustpilot"]`, `[data-trustpilot]`
+6. **Section Analysis** - Finds testimonials in sections with review-related headings
+
+**Star Rating Extraction:**
+- Aria labels (`aria-label*="rating"`)
+- Data attributes (`data-rating`, `data-stars`)
+- Icon counting (`.star-filled`, `.fa-star`)
+- SVG stars
+- Text-based ratings ("4.5/5", "5 stars")
+
+### Schema.org/JSON-LD Extraction (NEW)
+
+Extracts structured data from JSON-LD scripts:
+
+**Supported Schema Types:**
+- LocalBusiness, Organization, Restaurant, Store
+- ProfessionalService, LegalService, MedicalBusiness
+- HomeAndConstructionBusiness, Plumber, Electrician
+- RealEstateAgent, Dentist, Attorney, FinancialService
+
+**Extracted Data:**
+| Field | Description |
+|-------|-------------|
+| `rating` | Aggregate rating (1-5 stars) |
+| `reviewCount` | Number of reviews |
+| `priceRange` | Price indicator ($, $$, $$$) |
+| `openingHours` | Formatted business hours |
+| `address` | PostalAddress formatted to string |
+| `phone` | Telephone number |
+| `email` | Contact email |
+| `services` | From hasOfferCatalog/makesOffer |
+| `reviews` | Individual review texts with ratings |
+
+**Merge Priority:** Schema data fills gaps when scraped data is missing.
 
 ### Contact Extraction
 
-- **Phone** - Regex pattern matching for US phone numbers
+- **Phone** - Regex pattern matching for phone numbers
 - **Email** - Email regex with spam filtering (excludes example@, wixpress, etc.)
-- **Address** - Common address container selectors
+- **Address** - Common address container selectors + Schema.org
 - **Social Links** - Facebook, Instagram, Twitter/X, LinkedIn, YouTube
-- **Business Hours** - Hour/schedule sections
+- **Business Hours** - Hour/schedule sections + Schema.org openingHours
 
 ### Media Extraction
 
@@ -230,13 +280,21 @@ Intelligent content extraction using Playwright headless browser and Cheerio HTM
   - Skips tracking pixels, icons, SVGs
   - Includes alt text and section context
   - Max 20 images
+- **OG Image** - High-quality social share image (priority for hero)
 
 ### Color Extraction
 
-- Extracts computed background and text colors from all elements
-- Converts RGB to hex
+- Extracts hex colors from inline styles and `<style>` tags
 - Filters out pure black/white
 - Returns top 5 unique brand colors
+
+### Language Detection
+
+Automatic language detection:
+1. HTML `lang` attribute (most reliable)
+2. Meta tags (`content-language`, `language`)
+3. Content analysis (Dutch, German, French, Spanish, Italian indicators)
+4. Default: English
 
 ### Metadata
 
@@ -257,6 +315,36 @@ Handlebars-based template system with industry-specific configurations.
 - **Slot Mapping** - Maps scraped data to template slots
 - **Fallback Values** - Industry-specific defaults when data is missing
 - **AI Enhancement Flags** - Marks which slots should be AI-polished
+- **Google Fonts Integration** - Industry-specific font pairings (NEW)
+- **Layout Variants** - Visual diversity with different layouts (NEW)
+
+### Google Fonts Integration (NEW)
+
+5 curated font pairings automatically selected by industry:
+
+| Style | Heading Font | Body Font | Industries |
+|-------|--------------|-----------|------------|
+| Modern | Inter | Inter | General |
+| Elegant | Playfair Display | Source Sans Pro | Lawyers |
+| Bold | Bebas Neue | Open Sans | Plumbers, Electricians, Home Services |
+| Friendly | Nunito | Nunito | Restaurants, Retail |
+| Professional | Montserrat | Roboto | Dentists, Real Estate |
+
+### Layout Variants (NEW)
+
+4 distinct visual styles for design variety:
+
+| Variant | Hero Layout | Card Style | Color Intensity | Industries |
+|---------|-------------|------------|-----------------|------------|
+| Classic | Split (text + image) | Elevated shadows | Normal | Retail, Home Services |
+| Minimal | Centered | Flat with borders | Muted | Dentists, Real Estate |
+| Bold | Fullwidth with overlay | Solid background | Vibrant | Restaurants, Plumbers, Electricians |
+| Elegant | Asymmetric offset | Outlined | Refined | Lawyers |
+
+**Variant Features:**
+- **Section Spacing**: Compact (3rem), Normal (5rem), Relaxed (6rem), Luxurious (8rem)
+- **Border Radius**: Sharp (0.25rem), Subtle (0.5rem), Rounded (1rem)
+- **Hero Background**: Fullwidth variants use hero image as background with gradient overlay
 
 ### Industry Configurations
 
@@ -266,16 +354,32 @@ Each industry has a `template.json` defining:
 - AI enhancement preferences
 - Custom styling hints
 
+**Supported Industries:**
+- `plumber` - Bold variant, bold fonts
+- `electrician` - Bold variant, bold fonts
+- `restaurant` - Bold variant, friendly fonts
+- `lawyer` - Elegant variant, elegant fonts
+- `real-estate` - Minimal variant, professional fonts
+- `retail` - Classic variant, friendly fonts
+- `home-services` - Classic variant, bold fonts
+- `dentist` - Minimal variant, professional fonts
+- `general` - Classic variant, modern fonts
+
 ### Template Structure
 
 ```
 templates/
 ├── base/
+│   ├── styles.css         # Base CSS with CSS variables
 │   └── components/
 │       ├── header.html
 │       ├── hero.html
-│       ├── services.html
-│       └── ...
+│       ├── services-grid.html
+│       ├── why-us.html
+│       ├── testimonials.html
+│       ├── cta-banner.html
+│       ├── contact-section.html
+│       └── footer.html
 └── industries/
     ├── plumber/
     │   └── template.json
@@ -295,6 +399,49 @@ Uses Claude (Anthropic) to transform generic copy into conversion-focused conten
 1. **Slot-by-Slot** - Polish individual content slots with specific prompts
 2. **Services Polish** - Enhance entire service list for consistency
 3. **Full Site Polish** - Generate all copy in one cohesive pass
+4. **Content Generation** - Generate missing content when scraped content is weak (NEW)
+5. **Testimonial Generation** - Create realistic testimonials when none found (NEW)
+
+### Content Generation (NEW)
+
+When scraped content is "weak", the AI generates missing pieces:
+
+**Weakness Detection** (`needsContentGeneration()`):
+- Headline < 20 characters
+- Subheadline < 30 characters
+- No testimonials found
+- No services found
+- Triggers when 2+ of these are true
+
+**Generated Content:**
+- Headline (punchy, benefit-focused, max 10 words)
+- Subheadline (supports headline, max 25 words)
+- CTA text (action-oriented, max 4 words)
+- Why Us points (4 unique selling points)
+- Meta description (SEO-optimized, max 155 chars)
+- Testimonials (3 realistic customer reviews)
+
+### Industry Content Database (NEW)
+
+Pre-built content for fallbacks and AI prompting (`src/industryContent.js`):
+
+| Industry | Pain Points | Benefits | USPs | CTA Options |
+|----------|-------------|----------|------|-------------|
+| Plumber | Emergency leaks, Hidden fees | Same-day service, Upfront pricing | Licensed & Insured, 24/7 Emergency | Get a Free Quote, Call Now |
+| Electrician | Fire hazards, Code issues | Code-compliant, Warranty | Fully Licensed, Code Compliant | Schedule Inspection |
+| Restaurant | Boring takeout, No fresh options | Fresh ingredients, Family recipes | Fresh Daily, Catering Available | View Menu, Book a Table |
+| Lawyer | Confusing legal process | Clear communication, Free consult | Free Consultation, No Win No Fee | Get Legal Help |
+| And more... | | | | |
+
+### Testimonial Generation (NEW)
+
+AI-generated testimonials when none are scraped:
+
+- **Contextual**: Mentions actual services and location
+- **Varied Length**: One short, one medium, one longer
+- **Authentic Tones**: Relieved, grateful, impressed (industry-specific)
+- **Realistic Names**: Region-appropriate first names
+- **Star Ratings**: Always 5 stars
 
 ### Slot-Specific Prompts
 
@@ -306,6 +453,12 @@ Uses Claude (Anthropic) to transform generic copy into conversion-focused conten
 | CTA Text | Action-oriented, creates urgency, max 4 words |
 | About Text | Trust-building, warm, personal, max 60 words |
 | Meta Description | SEO-friendly, click-worthy, max 155 chars |
+
+### Multi-Language Support
+
+Generates UI elements in detected language:
+- English, Dutch, German, French, Spanish, Italian
+- Navigation labels, buttons, form fields, section headings
 
 ### AI Configuration
 
@@ -359,9 +512,40 @@ AI-generated personalized cold emails with automated follow-up sequences.
 ### Email Generation
 
 - **Initial Email** - Personalized pitch with preview link
-- **Subject Lines** - AI-generated, curiosity-driven (3 options)
+- **Subject Line A/B Testing** - 4 variants randomly selected (NEW)
 - **Follow-ups** - 3-stage sequence with different angles
 - **HTML Formatting** - Styled email with CTA button
+- **Before/After Screenshots** - Visual comparison embedded (NEW)
+- **Dynamic Expiry Countdown** - Color-coded urgency display (NEW)
+
+### Subject Line A/B Testing (NEW)
+
+4 subject variants randomly assigned for testing:
+
+| ID | Template |
+|----|----------|
+| A | "Your new {{businessName}} website" |
+| B | "I rebuilt {{businessName}} (free preview)" |
+| C | "{{businessName}} - thought you should see this" |
+| D | "Quick question about {{businessName}}" |
+
+### Before/After Screenshots (NEW)
+
+Playwright-powered screenshot capture:
+- Captures original site and rebuilt preview
+- Side-by-side comparison embedded in email
+- Mobile-width (375px) screenshots
+- "Before" with subtle border, "After" with blue highlight
+
+### Dynamic Expiry Countdown (NEW)
+
+Color-coded urgency based on days remaining:
+
+| Days Left | Color | Weight |
+|-----------|-------|--------|
+| ≤2 days | Red (#dc2626) | Bold |
+| 3-5 days | Orange (#f59e0b) | Semi-bold |
+| >5 days | Gray (#6b7280) | Normal |
 
 ### Email Style
 
@@ -387,6 +571,16 @@ AI-generated personalized cold emails with automated follow-up sequences.
 | 7 | Second | "Floating to top", mention expiration |
 | 12 | Breakup | Final notice, FOMO, door open |
 | 14 | Expire | Auto-expire status (no email) |
+
+### Email Queue System (NEW)
+
+Emails can be queued for approval before sending:
+
+1. **Queue Email** - `queueEmail(deployment, type, emailData)` creates draft
+2. **Review Draft** - View pending emails in dashboard
+3. **Approve** - Set status to "approved"
+4. **Send** - `sendFromQueue(emailId)` sends approved email
+5. **History** - Sent emails moved to history with success/failure status
 
 ### Email Sending
 
@@ -451,6 +645,14 @@ Vue 3 web dashboard for managing leads and tracking conversions.
 - Total revenue
 - Breakdown by industry
 
+### Tabbed Interface (NEW)
+
+3 main tabs for different workflows:
+
+1. **Leads Tab** - Lead management and status tracking
+2. **Deployments Tab** - View all deployed previews
+3. **Emails Tab** - Email queue, drafts, and history
+
 ### Lead Management
 
 - **Status Tracking**: Pending → Emailed → Responded → Converted → Expired
@@ -460,6 +662,13 @@ Vue 3 web dashboard for managing leads and tracking conversions.
 - **Notes**: Add notes to any deployment
 - **Manual Email Send**: Trigger email from dashboard
 - **Delete**: Remove deployment (optionally from Netlify too)
+
+### Email Queue Interface (NEW)
+
+- **Pending Drafts**: View emails awaiting approval
+- **Email Preview**: See full email before sending
+- **Approve/Reject**: One-click approval workflow
+- **Sent History**: Track sent emails with delivery status
 
 ### New Lead Form
 

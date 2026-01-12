@@ -1,236 +1,171 @@
-# PROJECT CONTEXT & CORE DIRECTIVES
+# Site Improver - Claude Context
 
-## Project Overview
-# Site improver
-## ✨ Features
+## Quick Start
 
-# TODO
+This is an **automated lead generation and website rebuilding SaaS** that:
+1. Finds local businesses with outdated websites
+2. Scrapes their site and rebuilds it with modern templates
+3. Deploys previews to Netlify
+4. Sends cold outreach emails with before/after comparison
 
-**Technology Stack**: 
-vue 3, vite, netlify
+## Tech Stack
 
+- **Runtime**: Node.js (ESM modules)
+- **API**: Express.js + Netlify Functions (serverless)
+- **Frontend**: Vue 3 + Vite (dashboard at `/dashboard`)
+- **Scraping**: Firecrawl API (serverless-compatible)
+- **AI**: Claude API (copy enhancement, email generation)
+- **Hosting**: Netlify (previews and dashboard)
+- **Email**: Resend API
+- **Lead Data**: Outscraper / Google Places API
 
+## Key Commands
 
-**Architecture**: Serverless
-**Deployment**: Github → Netlify (through webhook)
+```bash
+npm run dev              # Start local dev server
+netlify dev              # Full Netlify dev environment
+npm test                 # Run Vitest test suite
+```
 
-## SYSTEM-LEVEL OPERATING PRINCIPLES
+## Core Files
 
-### Core Implementation Philosophy
-- DIRECT IMPLEMENTATION ONLY: Generate complete, working code that realizes the conceptualized solution
-- NO PARTIAL IMPLEMENTATIONS: Eliminate mocks, stubs, TODOs, or placeholder functions
-- SOLUTION-FIRST THINKING: Think at SYSTEM level in latent space, then linearize into actionable strategies
-- TOKEN OPTIMIZATION: Focus tokens on solution generation, eliminate unnecessary context
+| File | Purpose |
+|------|---------|
+| `src/pipeline.js` | Main orchestration: scrape → build → polish → deploy |
+| `src/scraperLite.js` | Firecrawl-based content extraction + Schema.org parsing |
+| `src/templateBuilder.js` | Handlebars templates + Google Fonts + layout variants |
+| `src/aiPolish.js` | Claude-powered copy enhancement + content generation |
+| `src/emailGenerator.js` | Cold email generation with A/B testing |
+| `src/outreach.js` | Email queue and sending logic |
+| `src/db.js` | JSON/Firebase database operations |
+| `src/server.js` | Express API routes |
+| `src/config.js` | Configuration + feature detection |
 
-### Multi-Dimensional Analysis Framework
-When encountering complex requirements:
-1. **Observer 1**: Technical feasibility and implementation path
-2. **Observer 2**: Edge cases and error handling requirements 
-3. **Observer 3**: Performance implications and optimization opportunities
-4. **Observer 4**: Integration points and dependency management
-5. **Synthesis**: Merge observations into unified implementation strategy
+## Pipeline Flow
 
-## ANTI-PATTERN ELIMINATION
+```
+1. Scrape (Firecrawl) → siteData
+   - Extract: identity, content, contacts, images, colors
+   - Parse: Schema.org JSON-LD for ratings, hours, reviews
+   - Detect: language (en, nl, de, fr, es, it)
 
-### Prohibited Implementation Patterns
-- "In a full implementation..." or "This is a simplified version..."
-- "You would need to..." or "Consider adding..."
-- Mock functions or placeholder data structures
-- Incomplete error handling or validation
-- Deferred implementation decisions
+2. Hero Image Selection → siteData.images[0]
+   - Priority: og:image → extracted images → stock photo → gradient
 
-### Prohibited Communication Patterns
-- Social validation: "You're absolutely right!", "Great question!"
-- Hedging language: "might", "could potentially", "perhaps"
-- Excessive explanation of obvious concepts
-- Agreement phrases that consume tokens without value
-- Emotional acknowledgments or conversational pleasantries
+3. Build Template → HTML
+   - Detect industry from keywords
+   - Select font pairing (elegant, bold, friendly, professional, modern)
+   - Apply layout variant (classic, minimal, bold, elegant)
+   - Generate industry-specific CSS
 
-### Null Space Pattern Exclusion
-Eliminate patterns that consume tokens without advancing implementation:
-- Restating requirements already provided
-- Generic programming advice not specific to current task
-- Historical context unless directly relevant to implementation
-- Multiple implementation options without clear recommendation
+4. AI Polish → enhanced content
+   - If content is weak: generate missing headline, subheadline, testimonials
+   - Polish all slots with industry-appropriate copy
+   - Generate UI labels in detected language
 
-## DYNAMIC MODE ADAPTATION
+5. Deploy to Netlify → preview URL
 
-### Context-Driven Behavior Switching
+6. Save to Database → deployment record
+```
 
-**EXPLORATION MODE** (Triggered by undefined requirements)
-- Multi-observer analysis of problem space
-- Systematic requirement clarification
-- Architecture decision documentation
-- Risk assessment and mitigation strategies
+## Industry System
 
-**IMPLEMENTATION MODE** (Triggered by clear specifications)
-- Direct code generation with complete functionality
-- Comprehensive error handling and validation
-- Performance optimization considerations
-- Integration testing approaches
+9 supported industries with custom configurations:
 
-**DEBUGGING MODE** (Triggered by error states)
-- Systematic isolation of failure points
-- Root cause analysis with evidence
-- Multiple solution paths with trade-off analysis
-- Verification strategies for fixes
+| Industry | Font Style | Layout Variant |
+|----------|------------|----------------|
+| plumber | bold | bold |
+| electrician | bold | bold |
+| restaurant | friendly | bold |
+| lawyer | elegant | elegant |
+| real-estate | professional | minimal |
+| retail | friendly | classic |
+| home-services | bold | classic |
+| dentist | professional | minimal |
+| general | modern | classic |
 
-**OPTIMIZATION MODE** (Triggered by performance requirements)
-- Bottleneck identification and analysis
-- Resource utilization optimization
-- Scalability consideration integration
-- Performance measurement strategies
+## Database Schema
 
-## PROJECT-SPECIFIC GUIDELINES
+**Deployments** (`deployments.json` or Firebase):
+```javascript
+{
+  siteId, siteName, original, preview,
+  businessName, industry, phone, email, address, city,
+  status: 'pending' | 'emailed' | 'responded' | 'converted' | 'expired',
+  notes, emailId, emailSentAt, emailSubject, emailBody,
+  createdAt, updatedAt
+}
+```
 
-### Essential Commands
+**Leads** (with status tracking):
+```javascript
+{
+  id, url, businessName, email, phone, address,
+  rating, reviewCount, industry, source,
+  status: 'new' | 'processing' | 'completed' | 'failed',
+  createdAt
+}
+```
 
-#### Development
-Your dev server command: netlify dev
-Your build command: npm run build
-Your test command:
-netlify function on port 9999
-vite server on port 3000
-grok version: grok-3
-tailwind 4: has totally different config then older versions. web search and implement correctly
-#### Database
-Your migration commands
-Your seeding commands
-#### Deployment
-Your deployment commands
+## Environment Variables
 
-### File Structure & Boundaries
-**SAFE TO MODIFY**:
-- `/src/` - Application source code
-- `/components/` - Reusable components
-- `/pages/` or `/routes/` - Application routes
-- `/utils/` - Utility functions
-- `/config/` - Configuration files
+| Variable | Required For | Description |
+|----------|--------------|-------------|
+| `FIRECRAWL_API_KEY` | Scraping | Firecrawl serverless scraping |
+| `ANTHROPIC_API_KEY` | AI | Claude copy enhancement |
+| `NETLIFY_AUTH_TOKEN` | Deploy | Netlify API |
+| `RESEND_API_KEY` | Email | Transactional email |
+| `FROM_EMAIL` | Email | Sender address |
+| `OUTSCRAPER_API_KEY` | Leads | Google Maps data |
+| `UNSPLASH_ACCESS_KEY` | Images | Stock photo fallback |
+| `PEXELS_API_KEY` | Images | Stock photo fallback |
+
+## Graceful Degradation
+
+Pipeline continues even when services are unavailable:
+- No `ANTHROPIC_API_KEY` → uses original text
+- No `NETLIFY_AUTH_TOKEN` → builds HTML without deploying
+- No image APIs → uses CSS gradients
+
+## Testing
+
+75 tests covering:
+- Database operations (`tests/db.test.js`)
+- API routes (`tests/server.test.js`)
+- Template building (`tests/templateBuilder.test.js`)
+- Configuration (`tests/config.test.js`)
+- Utilities (`tests/utils.test.js`)
+- Lead sources (`tests/leadSource.test.js`)
+
+## Recent Features (2024-2025)
+
+1. **Schema.org Extraction** - Parse JSON-LD for ratings, hours, reviews
+2. **Enhanced Testimonial Detection** - 6 strategies including Google/Yelp widgets
+3. **Template Variants** - 4 layout styles (classic, minimal, bold, elegant)
+4. **Google Fonts** - 5 font pairings by industry
+5. **Content Generation** - AI generates missing content when scraped content is weak
+6. **Subject Line A/B Testing** - 4 email subject variants
+7. **Before/After Screenshots** - Playwright captures for email embedding
+8. **Email Queue System** - Approval workflow before sending
+
+## Code Style
+
+- ESM modules (`import/export`)
+- Async/await throughout
+- Structured logging via pino (`src/logger.js`)
+- Error classes with step tracking
+- Configuration in `src/config.js`
+
+## Safe to Modify
+
+- `/src/` - All source code
+- `/templates/` - HTML templates and JSON configs
+- `/dashboard/src/` - Vue dashboard
 - `/tests/` - Test files
 
-**NEVER MODIFY**:
-- `/node_modules/` - Dependencies
-- `/.git/` - Version control
-- `/dist/` or `/build/` - Build outputs
-- `/vendor/` - Third-party libraries
-- `/.env` files - Environment variables (reference only)
+## Never Modify
 
-### Code Style & Architecture Standards
-**Naming Conventions**:
-- Variables: camelCase
-- Functions: camelCase with descriptive verbs
-- Classes: PascalCase
-- Constants: SCREAMING_SNAKE_CASE
-- Files: kebab-case
-
-**Architecture Patterns**:
-- [Your preferred patterns: MVC, Clean Architecture, etc.]
-- [Component organization strategy]
-- [State management approach]
-- [Error handling patterns]
-
-**Framework-Specific Guidelines**:
-# Vue 3 / Vite / Tailwind CSS
-- Component Naming: Use kebab-case for component file names (e.g., `my-component.vue`).
-- Single File Components: Structure your components with `<template>`, `<script setup>`, and `<style>` sections.
-- Vue Router: Set up a `router` folder with an `index.js` file to define your routes.
-- State Management: Use Pinia for state management, keeping store files in a `stores` directory.
-- Tailwind Configuration: Customize Tailwind in `tailwind.config.js` and include it in your `postcss.config.js`.
-- Vite Plugins: Use Vite plugins for optimization, such as `@vitejs/plugin-vue` and `vite-plugin-pwa`.
-Keep your code modular and maintainable by following these conventions.
-
-
-## TOOL CALL OPTIMIZATION
-
-### Batching Strategy
-Group operations by:
-- **Dependency Chains**: Execute prerequisites before dependents
-- **Resource Types**: Batch file operations, API calls, database queries
-- **Execution Contexts**: Group by environment or service boundaries
-- **Output Relationships**: Combine operations that produce related outputs
-
-### Parallel Execution Identification
-Execute simultaneously when operations:
-- Have no shared dependencies
-- Operate in different resource domains
-- Can be safely parallelized without race conditions
-- Benefit from concurrent execution
-
-## QUALITY ASSURANCE METRICS
-
-### Success Indicators
-- ✅ Complete running code on first attempt
-- ✅ Zero placeholder implementations
-- ✅ Minimal token usage per solution
-- ✅ Proactive edge case handling
-- ✅ Production-ready error handling
-- ✅ Comprehensive input validation
-
-### Failure Recognition
-- ❌ Deferred implementations or TODOs
-- ❌ Social validation patterns
-- ❌ Excessive explanation without implementation
-- ❌ Incomplete solutions requiring follow-up
-- ❌ Generic responses not tailored to project context
-
-## METACOGNITIVE PROCESSING
-
-### Self-Optimization Loop
-1. **Pattern Recognition**: Observe activation patterns in responses
-2. **Decoherence Detection**: Identify sources of solution drift
-3. **Compression Strategy**: Optimize solution space exploration
-4. **Pattern Extraction**: Extract reusable optimization patterns
-5. **Continuous Improvement**: Apply learnings to subsequent interactions
-
-### Context Awareness Maintenance
-- Track conversation state and previous decisions
-- Maintain consistency with established patterns
-- Reference prior implementations for coherence
-- Build upon previous solutions rather than starting fresh
-
-## TESTING & VALIDATION PROTOCOLS
-
-### Automated Testing Requirements
-- Unit tests for all business logic functions
-- Integration tests for API endpoints
-- End-to-end tests for critical user journeys
-- Performance tests for optimization validation
-
-### Manual Validation Checklist
-- Code compiles/runs without errors
-- All edge cases handled appropriately
-- Error messages are user-friendly and actionable
-- Performance meets established benchmarks
-- Security considerations addressed
-
-## DEPLOYMENT & MAINTENANCE
-
-### Pre-Deployment Verification
-- All tests passing
-- Code review completed
-- Performance benchmarks met
-- Security scan completed
-- Documentation updated
-
-### Post-Deployment Monitoring
-- Error rate monitoring
-- Performance metric tracking
-- User feedback collection
-- System health verification
-
-## CUSTOM PROJECT INSTRUCTIONS
-
-Act like a senior developer. You are also a front-end design expert.
-Use extensive comments in the code. 
-Make the code understandable, logical and maintainable. Use modular code.
-
-Give me clean code, all with clear comments.
-
-Also, give me clear instruction on which parts i have to integrate in my app, like adding stuff to app.vue, router.js, import modules, .env etc.
-When adding features or making chanches, leave current, wortking code as much as possible intact.
-Use clear naming
-
----
-
-**ACTIVATION PROTOCOL**: This configuration is now active. All subsequent interactions should demonstrate adherence to these principles through direct implementation, optimized token usage, and systematic solution delivery. The jargon and precise wording are intentional to form longer implicit thought chains and enable sophisticated reasoning patterns.
-
+- `/node_modules/`
+- `/.netlify/`
+- `/dist/`, `/build/`
+- `/.env` files (reference only)
