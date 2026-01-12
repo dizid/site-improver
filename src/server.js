@@ -404,6 +404,131 @@ export function createServer(config = {}) {
     }
   });
 
+  // ==================== EMAIL QUEUE ====================
+
+  // Get email queue
+  app.get('/api/emails/queue', async (req, res) => {
+    try {
+      const { status, limit } = req.query;
+      const queue = await db.getEmailQueue({
+        status: status || undefined,
+        limit: limit ? parseInt(limit) : 50
+      });
+      res.json(queue);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get email history
+  app.get('/api/emails/history', async (req, res) => {
+    try {
+      const { status, limit } = req.query;
+      const history = await db.getEmailHistory({
+        status: status || undefined,
+        limit: limit ? parseInt(limit) : 50
+      });
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single email (for preview)
+  app.get('/api/emails/:emailId', async (req, res) => {
+    try {
+      const email = await db.getEmailDraft(req.params.emailId);
+      if (!email) {
+        return res.status(404).json({ error: 'Email not found' });
+      }
+      res.json(email);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Approve email
+  app.post('/api/emails/:emailId/approve', async (req, res) => {
+    try {
+      const { sendNow } = req.body;
+
+      const email = await db.approveEmail(req.params.emailId);
+
+      // Optionally send immediately after approval
+      if (sendNow) {
+        if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
+          return res.status(400).json({ error: 'Email not configured' });
+        }
+
+        const outreach = new OutreachManager({
+          resendApiKey: process.env.RESEND_API_KEY,
+          fromEmail: process.env.FROM_EMAIL
+        });
+
+        await outreach.sendFromQueue(req.params.emailId);
+        return res.json({ approved: true, sent: true });
+      }
+
+      res.json({ approved: true, email });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Reject email
+  app.post('/api/emails/:emailId/reject', async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const email = await db.rejectEmail(req.params.emailId, reason);
+      res.json({ rejected: true, email });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Send approved email from queue
+  app.post('/api/emails/:emailId/send', async (req, res) => {
+    try {
+      if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
+        return res.status(400).json({ error: 'Email not configured' });
+      }
+
+      const outreach = new OutreachManager({
+        resendApiKey: process.env.RESEND_API_KEY,
+        fromEmail: process.env.FROM_EMAIL
+      });
+
+      const result = await outreach.sendFromQueue(req.params.emailId);
+      res.json({ sent: true, result });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get email config
+  app.get('/api/config/email', async (req, res) => {
+    try {
+      const config = await db.getEmailConfig();
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update email config
+  app.patch('/api/config/email', async (req, res) => {
+    try {
+      const { autoSendEnabled, requireApproval } = req.body;
+      const config = await db.saveEmailConfig({
+        autoSendEnabled,
+        requireApproval
+      });
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ==================== HANDOVER / EXPORT ====================
 
   // Export site HTML for handover
@@ -506,26 +631,24 @@ export function createServer(config = {}) {
 
     log.info('Starting lead discovery', { query, location, limit });
 
-    // Try to load lead finder
+    // Try to load lead finder (Outscraper)
     let leads = [];
+    const searchLocation = location || 'Denver, CO';
+
     try {
       const { default: LeadFinder } = await import('./leadFinder.js');
       const finder = new LeadFinder();
-      leads = await finder.findLeads(query, {
-        locations: location ? [location] : ['Denver, CO'],
-        limit: parseInt(limit)
-      });
+      leads = await finder.search(query, searchLocation, parseInt(limit));
     } catch (err) {
-      log.warn('LeadFinder failed, trying Google Places', { error: err.message });
+      log.warn('LeadFinder (Outscraper) failed, trying Google Places', { error: err.message });
 
       // Fallback to Google Places
       try {
-        const { GooglePlacesClient } = await import('./googlePlaces.js');
-        const places = new GooglePlacesClient();
-        const searchQuery = location ? `${query} in ${location}` : query;
-        leads = await places.searchBusinesses(searchQuery, { limit: parseInt(limit) });
+        const { default: GooglePlacesLeadFinder } = await import('./googlePlaces.js');
+        const places = new GooglePlacesLeadFinder();
+        leads = await places.search(query, searchLocation, { limit: parseInt(limit) });
       } catch (placesErr) {
-        throw ApiError.badRequest(`Discovery failed: ${err.message}. Google Places: ${placesErr.message}`);
+        throw ApiError.badRequest(`Discovery failed: Outscraper: ${err.message}. Google Places: ${placesErr.message}`);
       }
     }
 
@@ -612,6 +735,21 @@ export function createServer(config = {}) {
           log.info(`Industry: ${result.industry}`);
           log.info(`Preview: ${result.preview}`);
           log.info(`Duration: ${result.duration}s`);
+
+          // Update lead status to deployed if lead exists
+          try {
+            const lead = await db.getLeadByUrl(validatedUrl);
+            if (lead) {
+              await db.updateLead(lead.id, {
+                status: 'deployed',
+                siteId: result.siteId,
+                preview: result.preview
+              });
+              log.info('Lead status updated to deployed', { leadId: lead.id });
+            }
+          } catch (err) {
+            log.warn('Failed to update lead status', { error: err.message });
+          }
 
           // Optionally send email
           if (!skipEmail && result.siteData.email && process.env.RESEND_API_KEY) {

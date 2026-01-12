@@ -85,7 +85,7 @@ export const CONFIG = {
 
   // AI Polish configuration
   ai: {
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-5-20251101',
     maxTokens: {
       slot: 200,              // For individual slot polish
       services: 800,          // For service list polish
@@ -97,6 +97,12 @@ export const CONFIG = {
   // Cleanup configuration
   cleanup: {
     maxAgeDays: 30            // Delete sites older than this
+  },
+
+  // Email control configuration
+  email: {
+    autoSendEnabled: false,   // If false, emails queue for approval instead of sending
+    requireApproval: true     // Require manual approval before any email sends
   },
 
   // Email sequence timing (days after initial email)

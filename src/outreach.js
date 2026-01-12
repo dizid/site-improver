@@ -1,7 +1,13 @@
 // src/outreach.js
 import { EmailGenerator, wrapInHtml } from './emailGenerator.js';
 import EmailSender from './emailSender.js';
-import { updateDeployment } from './db.js';
+import {
+  updateDeployment,
+  createEmailDraft,
+  getEmailDraft,
+  getEmailConfig,
+  moveToHistory
+} from './db.js';
 import logger from './logger.js';
 import { CONFIG } from './config.js';
 
@@ -16,12 +22,100 @@ export class OutreachManager {
     );
   }
 
-  async sendInitialOutreach(deployment) {
+  /**
+   * Queue an email for approval instead of sending immediately
+   */
+  async queueEmail(deployment, type, emailData) {
+    const draft = await createEmailDraft({
+      leadId: deployment.leadId || null,
+      deploymentId: deployment.siteId,
+      type,
+      to: deployment.email,
+      subject: emailData.subject,
+      textBody: emailData.textBody,
+      htmlBody: emailData.htmlBody,
+      businessName: deployment.businessName
+    });
+
+    log.info(`Email queued for approval`, {
+      emailId: draft.id,
+      to: deployment.email,
+      type
+    });
+
+    return { queued: true, emailId: draft.id };
+  }
+
+  /**
+   * Send an email from the queue (after approval)
+   */
+  async sendFromQueue(emailId) {
+    const draft = await getEmailDraft(emailId);
+
+    if (!draft) {
+      throw new Error(`Email draft not found: ${emailId}`);
+    }
+
+    if (draft.status !== 'approved') {
+      throw new Error(`Email not approved: ${emailId} (status: ${draft.status})`);
+    }
+
+    try {
+      const result = await this.sender.sendWithHtml({
+        to: draft.to,
+        subject: draft.subject,
+        textBody: draft.textBody,
+        htmlBody: draft.htmlBody
+      });
+
+      // Move to history with success
+      await moveToHistory(emailId, {
+        success: true,
+        id: result.id
+      });
+
+      // Update deployment if we have one
+      if (draft.deploymentId) {
+        const updateData = {
+          status: 'emailed',
+          emailId: result.id,
+          emailSentAt: result.sentAt,
+          emailSubject: draft.subject,
+          emailBody: draft.textBody
+        };
+
+        // Handle follow-up types
+        if (draft.type.startsWith('followup-')) {
+          const attempt = parseInt(draft.type.split('-')[1]);
+          updateData[`followUp${attempt}SentAt`] = result.sentAt;
+          delete updateData.status; // Don't change status for follow-ups
+        }
+
+        await updateDeployment(draft.deploymentId, updateData);
+      }
+
+      log.info(`Email sent from queue`, { emailId, to: draft.to });
+      return result;
+    } catch (error) {
+      // Move to history with failure
+      await moveToHistory(emailId, {
+        success: false,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  async sendInitialOutreach(deployment, options = {}) {
     // Skip if no email found
     if (!deployment.email) {
       log.warn(`No email found for ${deployment.businessName}`);
       return null;
     }
+
+    // Check email config
+    const emailConfig = await getEmailConfig();
+    const shouldQueue = !emailConfig.autoSendEnabled || emailConfig.requireApproval;
 
     // Generate personalized email
     const emailBody = await this.generator.generateEmail({
@@ -46,12 +140,21 @@ export class OutreachManager {
       deployment.businessName
     );
 
-    // Send it
-    const result = await this.sender.sendWithHtml({
-      to: deployment.email,
+    const emailData = {
       subject: subjects[0],
       textBody: emailBody,
       htmlBody
+    };
+
+    // Queue for approval if configured (unless explicitly forcing send)
+    if (shouldQueue && !options.forceSend) {
+      return await this.queueEmail(deployment, 'initial', emailData);
+    }
+
+    // Send immediately
+    const result = await this.sender.sendWithHtml({
+      to: deployment.email,
+      ...emailData
     });
 
     // Update deployment record
@@ -68,10 +171,14 @@ export class OutreachManager {
     return result;
   }
 
-  async sendFollowUp(deployment, attempt) {
+  async sendFollowUp(deployment, attempt, options = {}) {
     if (!deployment.email) {
       return null;
     }
+
+    // Check email config
+    const emailConfig = await getEmailConfig();
+    const shouldQueue = !emailConfig.autoSendEnabled || emailConfig.requireApproval;
 
     const followUpBody = await this.generator.generateFollowUp(
       {
@@ -94,11 +201,21 @@ export class OutreachManager {
       deployment.businessName
     );
 
-    const result = await this.sender.sendWithHtml({
-      to: deployment.email,
+    const emailData = {
       subject: subjects[attempt] || subjects[1],
       textBody: followUpBody,
       htmlBody
+    };
+
+    // Queue for approval if configured (unless explicitly forcing send)
+    if (shouldQueue && !options.forceSend) {
+      return await this.queueEmail(deployment, `followup-${attempt}`, emailData);
+    }
+
+    // Send immediately
+    const result = await this.sender.sendWithHtml({
+      to: deployment.email,
+      ...emailData
     });
 
     await updateDeployment(deployment.siteId, {
@@ -113,9 +230,18 @@ export class OutreachManager {
 
 export async function runDailySequence(config) {
   const { emailSequence } = CONFIG;
-  const { getDeployments, updateDeployment } = await import('./db.js');
+  const { getDeployments, updateDeployment, getEmailConfig } = await import('./db.js');
+
+  // Check if auto-send is enabled
+  const emailConfig = await getEmailConfig();
+  if (!emailConfig.autoSendEnabled) {
+    log.info('Auto-send disabled, skipping daily sequence');
+    return { skipped: true, reason: 'autoSendEnabled is false' };
+  }
+
   const outreach = new OutreachManager(config);
   const now = new Date();
+  const results = { queued: 0, sent: 0, expired: 0 };
 
   const deployments = await getDeployments();
 
@@ -126,35 +252,51 @@ export async function runDailySequence(config) {
       ? (now - new Date(d.emailSentAt)) / (1000 * 60 * 60 * 24)
       : null;
 
-    // Initial email
-    if (d.status === 'pending' && !d.emailSentAt) {
-      await outreach.sendInitialOutreach(d);
-      continue;
-    }
+    try {
+      // Initial email
+      if (d.status === 'pending' && !d.emailSentAt) {
+        const result = await outreach.sendInitialOutreach(d);
+        if (result?.queued) results.queued++;
+        else if (result) results.sent++;
+        continue;
+      }
 
-    // Follow-up 1 (day 3)
-    if (daysSinceEmail >= emailSequence.followUp1 && !d.followUp1SentAt) {
-      await outreach.sendFollowUp(d, 1);
-      continue;
-    }
+      // Follow-up 1 (day 3)
+      if (daysSinceEmail >= emailSequence.followUp1 && !d.followUp1SentAt) {
+        const result = await outreach.sendFollowUp(d, 1);
+        if (result?.queued) results.queued++;
+        else if (result) results.sent++;
+        continue;
+      }
 
-    // Follow-up 2 (day 7)
-    if (daysSinceEmail >= emailSequence.followUp2 && !d.followUp2SentAt) {
-      await outreach.sendFollowUp(d, 2);
-      continue;
-    }
+      // Follow-up 2 (day 7)
+      if (daysSinceEmail >= emailSequence.followUp2 && !d.followUp2SentAt) {
+        const result = await outreach.sendFollowUp(d, 2);
+        if (result?.queued) results.queued++;
+        else if (result) results.sent++;
+        continue;
+      }
 
-    // Breakup (day 12)
-    if (daysSinceEmail >= emailSequence.followUp3 && !d.followUp3SentAt) {
-      await outreach.sendFollowUp(d, 3);
-      continue;
-    }
+      // Breakup (day 12)
+      if (daysSinceEmail >= emailSequence.followUp3 && !d.followUp3SentAt) {
+        const result = await outreach.sendFollowUp(d, 3);
+        if (result?.queued) results.queued++;
+        else if (result) results.sent++;
+        continue;
+      }
 
-    // Expire (day 14)
-    if (daysSinceEmail >= emailSequence.expire) {
-      await updateDeployment(d.siteId, { status: 'expired' });
+      // Expire (day 14)
+      if (daysSinceEmail >= emailSequence.expire) {
+        await updateDeployment(d.siteId, { status: 'expired' });
+        results.expired++;
+      }
+    } catch (error) {
+      log.error(`Error processing deployment ${d.siteId}`, { error: error.message });
     }
   }
+
+  log.info('Daily sequence completed', results);
+  return results;
 }
 
 export default OutreachManager;

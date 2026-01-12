@@ -25,6 +25,7 @@
         <a href="#demo" @click="mobileMenuOpen = false">Demo</a>
         <a href="#find-leads" @click="mobileMenuOpen = false">Find Leads</a>
         <a href="#pipeline" @click="mobileMenuOpen = false">Pipeline</a>
+        <a href="#emails" @click="mobileMenuOpen = false">Emails</a>
         <a href="#leads" @click="mobileMenuOpen = false">All Leads</a>
       </nav>
     </header>
@@ -246,6 +247,207 @@
         </div>
       </section>
 
+      <!-- Email Queue Section -->
+      <section id="emails" class="section">
+        <div class="section-header">
+          <h2>Email Management</h2>
+          <div class="email-tabs">
+            <button
+              :class="['tab-btn', { active: emailTab === 'queue' }]"
+              @click="emailTab = 'queue'"
+            >
+              Queue ({{ emailQueue.length }})
+            </button>
+            <button
+              :class="['tab-btn', { active: emailTab === 'history' }]"
+              @click="emailTab = 'history'"
+            >
+              History
+            </button>
+            <button
+              :class="['tab-btn', { active: emailTab === 'settings' }]"
+              @click="emailTab = 'settings'"
+            >
+              Settings
+            </button>
+          </div>
+        </div>
+
+        <!-- Email Queue Tab -->
+        <div v-if="emailTab === 'queue'" class="email-queue">
+          <div v-if="emailQueue.length === 0" class="empty-state">
+            <p>No emails pending approval</p>
+            <p class="muted">Emails will appear here when leads are processed</p>
+          </div>
+          <div v-else class="table-container">
+            <table class="deployments-table">
+              <thead>
+                <tr>
+                  <th>To</th>
+                  <th>Subject</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="email in emailQueue" :key="email.id">
+                  <td>
+                    <div class="business-name">{{ email.businessName || 'Unknown' }}</div>
+                    <div class="business-meta">{{ email.to }}</div>
+                  </td>
+                  <td class="email-subject">{{ email.subject }}</td>
+                  <td>
+                    <span class="badge badge-gray">{{ email.type }}</span>
+                  </td>
+                  <td>
+                    <span :class="['badge', getEmailStatusBadge(email.status)]">
+                      {{ email.status }}
+                    </span>
+                  </td>
+                  <td>{{ timeAgo(email.createdAt) }}</td>
+                  <td class="actions-cell">
+                    <button
+                      class="btn btn-sm btn-ghost"
+                      @click="previewEmail(email)"
+                      title="Preview email"
+                    >
+                      Preview
+                    </button>
+                    <button
+                      v-if="email.status === 'draft'"
+                      class="btn btn-sm btn-primary"
+                      @click="approveAndSendEmail(email.id)"
+                      :disabled="email._loading"
+                    >
+                      {{ email._loading ? 'Sending...' : 'Approve & Send' }}
+                    </button>
+                    <button
+                      v-if="email.status === 'draft'"
+                      class="btn btn-sm btn-danger"
+                      @click="rejectEmail(email.id)"
+                      :disabled="email._loading"
+                    >
+                      Reject
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Email History Tab -->
+        <div v-if="emailTab === 'history'" class="email-history">
+          <div v-if="emailHistory.length === 0" class="empty-state">
+            <p>No emails sent yet</p>
+          </div>
+          <div v-else class="table-container">
+            <table class="deployments-table">
+              <thead>
+                <tr>
+                  <th>To</th>
+                  <th>Subject</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Sent</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="email in emailHistory" :key="email.id">
+                  <td>
+                    <div class="business-name">{{ email.businessName || 'Unknown' }}</div>
+                    <div class="business-meta">{{ email.to }}</div>
+                  </td>
+                  <td class="email-subject">{{ email.subject }}</td>
+                  <td>
+                    <span class="badge badge-gray">{{ email.type }}</span>
+                  </td>
+                  <td>
+                    <span :class="['badge', email.status === 'sent' ? 'badge-green' : 'badge-red']">
+                      {{ email.status }}
+                    </span>
+                  </td>
+                  <td>{{ timeAgo(email.sentAt) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Email Settings Tab -->
+        <div v-if="emailTab === 'settings'" class="email-settings">
+          <div class="settings-card">
+            <h3>Email Configuration</h3>
+            <div class="settings-group">
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  v-model="emailConfig.autoSendEnabled"
+                  @change="saveEmailSettings"
+                />
+                <span class="toggle-text">
+                  <strong>Auto-send emails</strong>
+                  <span class="muted">When enabled, emails send automatically without approval</span>
+                </span>
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  v-model="emailConfig.requireApproval"
+                  @change="saveEmailSettings"
+                />
+                <span class="toggle-text">
+                  <strong>Require approval</strong>
+                  <span class="muted">Queue emails for manual approval before sending</span>
+                </span>
+              </label>
+            </div>
+            <div class="settings-info">
+              <p><strong>From email:</strong> {{ fromEmail || 'Not configured' }}</p>
+              <p><strong>Provider:</strong> Resend {{ resendConfigured ? '(Connected)' : '(Not configured)' }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Email Preview Modal -->
+        <Teleport to="body">
+          <div v-if="emailPreview" class="modal-overlay" @click.self="emailPreview = null">
+            <div class="modal email-preview-modal">
+              <div class="modal-header">
+                <h3>Email Preview</h3>
+                <button @click="emailPreview = null" class="modal-close">&times;</button>
+              </div>
+              <div class="modal-body">
+                <div class="preview-field">
+                  <label>To:</label>
+                  <span>{{ emailPreview.to }}</span>
+                </div>
+                <div class="preview-field">
+                  <label>Subject:</label>
+                  <span>{{ emailPreview.subject }}</span>
+                </div>
+                <div class="preview-content">
+                  <div class="preview-html" v-html="emailPreview.htmlBody"></div>
+                </div>
+              </div>
+              <div class="modal-footer" v-if="emailPreview.status === 'draft'">
+                <button class="btn btn-ghost" @click="emailPreview = null">Close</button>
+                <button class="btn btn-danger" @click="rejectEmail(emailPreview.id); emailPreview = null">
+                  Reject
+                </button>
+                <button class="btn btn-primary" @click="approveAndSendEmail(emailPreview.id); emailPreview = null">
+                  Approve & Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </Teleport>
+      </section>
+
       <!-- Leads Table Section -->
       <section id="leads" class="section">
         <div class="section-header">
@@ -361,6 +563,16 @@
                       <option value="expired">Expired</option>
                     </select>
 
+                    <!-- Process button for discovered/qualified leads -->
+                    <button
+                      v-if="['discovered', 'qualified'].includes(lead.status) && lead.url"
+                      class="btn btn-sm btn-primary"
+                      @click="handleProcessLead(lead)"
+                      :disabled="lead._loading || processingLeads.has(lead.id)"
+                    >
+                      {{ processingLeads.has(lead.id) ? 'Processing...' : 'Process' }}
+                    </button>
+
                     <button
                       v-if="lead.email && lead.status === 'deployed'"
                       class="btn btn-sm btn-primary"
@@ -449,6 +661,16 @@ const error = ref(null);
 const toast = ref(null);
 const mobileMenuOpen = ref(false);
 const selectedLead = ref(null);
+const processingLeads = ref(new Set());
+
+// Email state
+const emailTab = ref('queue');
+const emailQueue = ref([]);
+const emailHistory = ref([]);
+const emailConfig = ref({ autoSendEnabled: false, requireApproval: true });
+const emailPreview = ref(null);
+const fromEmail = ref('');
+const resendConfigured = ref(false);
 
 // Form state
 const newLeadUrl = ref('');
@@ -571,6 +793,9 @@ async function fetchData() {
     leads.value = leadsData;
     stats.value = statsData;
     error.value = null;
+
+    // Also fetch email data
+    await fetchEmailData();
   } catch (err) {
     error.value = err.message;
     // Try legacy endpoints if new ones fail
@@ -582,6 +807,7 @@ async function fetchData() {
       leads.value = deploymentsData;
       stats.value = legacyStats;
       error.value = null;
+      await fetchEmailData();
     } catch (legacyErr) {
       console.error('Both API versions failed:', legacyErr);
     }
@@ -834,6 +1060,99 @@ async function handleConvert(lead) {
     showToast(`Failed to convert: ${err.message}`, 'error');
   } finally {
     lead._loading = false;
+  }
+}
+
+async function handleProcessLead(lead) {
+  if (!lead.url) {
+    showToast('Lead has no URL to process', 'error');
+    return;
+  }
+
+  processingLeads.value.add(lead.id);
+  try {
+    await api.post('/api/pipeline', { url: lead.url });
+    showToast(`Processing started for ${lead.businessName || 'lead'}`, 'success');
+    // Refresh after a moment to show status change
+    setTimeout(fetchData, 2000);
+  } catch (err) {
+    showToast(`Failed to process: ${err.message}`, 'error');
+  } finally {
+    processingLeads.value.delete(lead.id);
+  }
+}
+
+// Email management functions
+async function fetchEmailData() {
+  try {
+    const [queueData, historyData, configData] = await Promise.all([
+      api.get('/api/emails/queue'),
+      api.get('/api/emails/history?limit=50'),
+      api.get('/api/config/email')
+    ]);
+    emailQueue.value = queueData;
+    emailHistory.value = historyData;
+    emailConfig.value = configData;
+  } catch (err) {
+    console.error('Failed to fetch email data:', err);
+  }
+}
+
+function getEmailStatusBadge(status) {
+  const badges = {
+    draft: 'badge-yellow',
+    approved: 'badge-blue',
+    sending: 'badge-blue',
+    sent: 'badge-green',
+    rejected: 'badge-red',
+    failed: 'badge-red'
+  };
+  return badges[status] || 'badge-gray';
+}
+
+function previewEmail(email) {
+  emailPreview.value = email;
+}
+
+async function approveAndSendEmail(emailId) {
+  const email = emailQueue.value.find(e => e.id === emailId);
+  if (email) email._loading = true;
+
+  try {
+    await api.post(`/api/emails/${emailId}/approve`, { sendNow: true });
+    showToast('Email approved and sent', 'success');
+    await fetchEmailData();
+  } catch (err) {
+    showToast(`Failed to send email: ${err.message}`, 'error');
+  } finally {
+    if (email) email._loading = false;
+  }
+}
+
+async function rejectEmail(emailId) {
+  const email = emailQueue.value.find(e => e.id === emailId);
+  if (email) email._loading = true;
+
+  try {
+    await api.post(`/api/emails/${emailId}/reject`);
+    showToast('Email rejected', 'success');
+    await fetchEmailData();
+  } catch (err) {
+    showToast(`Failed to reject email: ${err.message}`, 'error');
+  } finally {
+    if (email) email._loading = false;
+  }
+}
+
+async function saveEmailSettings() {
+  try {
+    await api.patch('/api/config/email', {
+      autoSendEnabled: emailConfig.value.autoSendEnabled,
+      requireApproval: emailConfig.value.requireApproval
+    });
+    showToast('Email settings saved', 'success');
+  } catch (err) {
+    showToast(`Failed to save settings: ${err.message}`, 'error');
   }
 }
 
@@ -1270,5 +1589,193 @@ onUnmounted(() => {
   .discover-inputs {
     grid-template-columns: 1fr;
   }
+}
+
+/* Email Management Styles */
+.email-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tab-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  background: var(--color-surface);
+}
+
+.tab-btn.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.email-subject {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-settings {
+  max-width: 600px;
+}
+
+.settings-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+.settings-card h3 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.1rem;
+}
+
+.settings-group {
+  margin-bottom: 1.25rem;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  margin-top: 0.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.toggle-text strong {
+  font-weight: 600;
+}
+
+.settings-info {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-info p {
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+}
+
+/* Email Preview Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: var(--radius-lg);
+  max-width: 700px;
+  width: 90%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--color-text-light);
+  line-height: 1;
+}
+
+.modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.preview-field {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.preview-field label {
+  font-weight: 600;
+  min-width: 60px;
+  color: var(--color-text-light);
+}
+
+.preview-content {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.preview-html {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 </style>

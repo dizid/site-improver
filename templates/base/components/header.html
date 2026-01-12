@@ -12,20 +12,20 @@
 
     <!-- Main navigation with rounded hover states -->
     <nav class="main-nav">
-      <a href="#services">Services</a>
-      <a href="#about">About Us</a>
-      <a href="#testimonials">Reviews</a>
-      <a href="#contact">Contact</a>
+      <a href="#services">{{nav_services}}</a>
+      <a href="#about">{{nav_about}}</a>
+      <a href="#testimonials">{{nav_reviews}}</a>
+      <a href="#contact">{{nav_contact}}</a>
     </nav>
 
     <!-- Pill-shaped phone CTA -->
     {{#if phone}}
     <a href="tel:{{phone}}" class="header-cta">
-      Call Us: {{phone}}
+      {{btn_call}}: {{phone}}
     </a>
     {{else}}
     <a href="#contact" class="header-cta">
-      Get in Touch
+      {{section_contact}}
     </a>
     {{/if}}
   </div>

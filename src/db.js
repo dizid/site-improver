@@ -14,7 +14,19 @@ const log = logger.child('db');
 async function loadLocalDb() {
   try {
     const data = await fs.readFile(DB_PATH, 'utf-8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+
+    // Handle legacy array format (convert to new format)
+    if (Array.isArray(parsed)) {
+      log.info('Migrating legacy database format');
+      return { leads: [], deployments: parsed };
+    }
+
+    // Ensure both arrays exist
+    return {
+      leads: parsed.leads || [],
+      deployments: parsed.deployments || []
+    };
   } catch (error) {
     if (error.code === 'ENOENT') {
       log.debug('Database file not found, starting fresh');
@@ -84,18 +96,23 @@ export async function getLead(leadId) {
 }
 
 export async function getLeadByUrl(url) {
+  // Normalize URL for comparison (remove trailing slash, lowercase)
+  const normalizeUrl = (u) => u?.toLowerCase().replace(/\/$/, '') || '';
+  const normalizedSearch = normalizeUrl(url);
+
   if (isFirebaseEnabled()) {
     const db = getFirestore();
-    const snapshot = await db.collection(COLLECTIONS.LEADS)
-      .where('url', '==', url)
-      .limit(1)
-      .get();
-    if (snapshot.empty) return null;
-    const doc = snapshot.docs[0];
-    return { id: doc.id, ...doc.data() };
+    // Firebase doesn't support flexible string matching, so fetch and filter
+    const snapshot = await db.collection(COLLECTIONS.LEADS).get();
+    for (const doc of snapshot.docs) {
+      if (normalizeUrl(doc.data().url) === normalizedSearch) {
+        return { id: doc.id, ...doc.data() };
+      }
+    }
+    return null;
   } else {
     const localDb = await loadLocalDb();
-    return (localDb.leads || []).find(l => l.url === url) || null;
+    return (localDb.leads || []).find(l => normalizeUrl(l.url) === normalizedSearch) || null;
   }
 }
 
@@ -410,6 +427,302 @@ export async function getPipelineErrors(limit = 20) {
   }
 }
 
+// ==================== EMAIL QUEUE FUNCTIONS ====================
+
+function generateEmailId() {
+  return `email_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+/**
+ * Create a draft email in the queue for approval
+ */
+export async function createEmailDraft(data) {
+  const timestamp = new Date().toISOString();
+  const emailId = generateEmailId();
+
+  const draft = {
+    id: emailId,
+    leadId: data.leadId || null,
+    deploymentId: data.deploymentId || null,
+    type: data.type || 'initial', // 'initial', 'followup-1', 'followup-2', 'followup-3'
+    to: data.to,
+    subject: data.subject,
+    textBody: data.textBody,
+    htmlBody: data.htmlBody,
+    businessName: data.businessName || null,
+    status: 'draft', // 'draft', 'approved', 'rejected', 'sending', 'sent'
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('emailQueue').doc(emailId).set(draft);
+    log.info('Email draft created in Firebase', { emailId, to: data.to });
+  } else {
+    const localDb = await loadLocalDb();
+    localDb.emailQueue = localDb.emailQueue || [];
+    localDb.emailQueue.push(draft);
+    await saveLocalDb(localDb);
+    log.info('Email draft created locally', { emailId, to: data.to });
+  }
+
+  return draft;
+}
+
+/**
+ * Get email drafts from queue
+ */
+export async function getEmailQueue(filters = {}) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    let query = db.collection('emailQueue');
+
+    if (filters.status) {
+      query = query.where('status', '==', filters.status);
+    }
+
+    query = query.orderBy('createdAt', 'desc');
+
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    const snapshot = await query.get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } else {
+    const localDb = await loadLocalDb();
+    let queue = localDb.emailQueue || [];
+
+    if (filters.status) {
+      queue = queue.filter(e => e.status === filters.status);
+    }
+
+    queue.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    if (filters.limit) {
+      queue = queue.slice(0, filters.limit);
+    }
+
+    return queue;
+  }
+}
+
+/**
+ * Get a single email draft by ID
+ */
+export async function getEmailDraft(emailId) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const doc = await db.collection('emailQueue').doc(emailId).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
+  } else {
+    const localDb = await loadLocalDb();
+    return (localDb.emailQueue || []).find(e => e.id === emailId) || null;
+  }
+}
+
+/**
+ * Approve an email for sending
+ */
+export async function approveEmail(emailId) {
+  const timestamp = new Date().toISOString();
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('emailQueue').doc(emailId).update({
+      status: 'approved',
+      approvedAt: timestamp,
+      updatedAt: timestamp
+    });
+    log.info('Email approved in Firebase', { emailId });
+    return getEmailDraft(emailId);
+  } else {
+    const localDb = await loadLocalDb();
+    const index = (localDb.emailQueue || []).findIndex(e => e.id === emailId);
+
+    if (index === -1) {
+      throw new Error(`Email draft not found: ${emailId}`);
+    }
+
+    localDb.emailQueue[index] = {
+      ...localDb.emailQueue[index],
+      status: 'approved',
+      approvedAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    await saveLocalDb(localDb);
+    log.info('Email approved locally', { emailId });
+    return localDb.emailQueue[index];
+  }
+}
+
+/**
+ * Reject an email
+ */
+export async function rejectEmail(emailId, reason = null) {
+  const timestamp = new Date().toISOString();
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('emailQueue').doc(emailId).update({
+      status: 'rejected',
+      rejectedAt: timestamp,
+      rejectionReason: reason,
+      updatedAt: timestamp
+    });
+    log.info('Email rejected in Firebase', { emailId, reason });
+    return getEmailDraft(emailId);
+  } else {
+    const localDb = await loadLocalDb();
+    const index = (localDb.emailQueue || []).findIndex(e => e.id === emailId);
+
+    if (index === -1) {
+      throw new Error(`Email draft not found: ${emailId}`);
+    }
+
+    localDb.emailQueue[index] = {
+      ...localDb.emailQueue[index],
+      status: 'rejected',
+      rejectedAt: timestamp,
+      rejectionReason: reason,
+      updatedAt: timestamp
+    };
+
+    await saveLocalDb(localDb);
+    log.info('Email rejected locally', { emailId, reason });
+    return localDb.emailQueue[index];
+  }
+}
+
+/**
+ * Move email from queue to history after sending
+ */
+export async function moveToHistory(emailId, sendResult) {
+  const timestamp = new Date().toISOString();
+  const draft = await getEmailDraft(emailId);
+
+  if (!draft) {
+    throw new Error(`Email draft not found: ${emailId}`);
+  }
+
+  const historyRecord = {
+    ...draft,
+    status: sendResult.success ? 'sent' : 'failed',
+    sentAt: timestamp,
+    resendId: sendResult.id || null,
+    error: sendResult.error || null
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    // Add to history
+    await db.collection('emailHistory').doc(emailId).set(historyRecord);
+    // Remove from queue
+    await db.collection('emailQueue').doc(emailId).delete();
+    log.info('Email moved to history in Firebase', { emailId, status: historyRecord.status });
+  } else {
+    const localDb = await loadLocalDb();
+    // Add to history
+    localDb.emailHistory = localDb.emailHistory || [];
+    localDb.emailHistory.push(historyRecord);
+    // Remove from queue
+    localDb.emailQueue = (localDb.emailQueue || []).filter(e => e.id !== emailId);
+    await saveLocalDb(localDb);
+    log.info('Email moved to history locally', { emailId, status: historyRecord.status });
+  }
+
+  return historyRecord;
+}
+
+/**
+ * Get email history
+ */
+export async function getEmailHistory(filters = {}) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    let query = db.collection('emailHistory');
+
+    if (filters.status) {
+      query = query.where('status', '==', filters.status);
+    }
+
+    query = query.orderBy('sentAt', 'desc');
+
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    const snapshot = await query.get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } else {
+    const localDb = await loadLocalDb();
+    let history = localDb.emailHistory || [];
+
+    if (filters.status) {
+      history = history.filter(e => e.status === filters.status);
+    }
+
+    history.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
+
+    if (filters.limit) {
+      history = history.slice(0, filters.limit);
+    }
+
+    return history;
+  }
+}
+
+// ==================== EMAIL CONFIG FUNCTIONS ====================
+
+/**
+ * Get email configuration
+ */
+export async function getEmailConfig() {
+  const defaults = {
+    autoSendEnabled: CONFIG.email?.autoSendEnabled ?? false,
+    requireApproval: CONFIG.email?.requireApproval ?? true
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const doc = await db.collection('config').doc('email').get();
+    if (!doc.exists) return defaults;
+    return { ...defaults, ...doc.data() };
+  } else {
+    const localDb = await loadLocalDb();
+    return { ...defaults, ...(localDb.emailConfig || {}) };
+  }
+}
+
+/**
+ * Save email configuration
+ */
+export async function saveEmailConfig(config) {
+  const timestamp = new Date().toISOString();
+
+  const emailConfig = {
+    autoSendEnabled: config.autoSendEnabled ?? false,
+    requireApproval: config.requireApproval ?? true,
+    updatedAt: timestamp
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('config').doc('email').set(emailConfig, { merge: true });
+    log.info('Email config saved to Firebase', emailConfig);
+  } else {
+    const localDb = await loadLocalDb();
+    localDb.emailConfig = emailConfig;
+    await saveLocalDb(localDb);
+    log.info('Email config saved locally', emailConfig);
+  }
+
+  return emailConfig;
+}
+
 // ==================== STATS FUNCTIONS ====================
 
 export async function getStats() {
@@ -488,6 +801,17 @@ export default {
   // Error tracking
   logPipelineError,
   getPipelineErrors,
+  // Email queue functions
+  createEmailDraft,
+  getEmailQueue,
+  getEmailDraft,
+  approveEmail,
+  rejectEmail,
+  moveToHistory,
+  getEmailHistory,
+  // Email config
+  getEmailConfig,
+  saveEmailConfig,
   // Stats
   getStats,
   // Backwards compatibility
