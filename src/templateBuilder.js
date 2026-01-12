@@ -54,6 +54,55 @@ const INDUSTRY_FONTS = {
   general: 'modern'
 };
 
+// Layout variants for visual diversity
+const LAYOUT_VARIANTS = {
+  classic: {
+    name: 'Classic',
+    heroLayout: 'split',           // Image on right, text on left
+    cardStyle: 'elevated',         // Cards with shadows
+    sectionSpacing: 'normal',      // Standard spacing
+    borderRadius: 'rounded',       // 1rem border radius
+    colorIntensity: 'normal'       // Standard color saturation
+  },
+  minimal: {
+    name: 'Minimal',
+    heroLayout: 'centered',        // Centered text, image below
+    cardStyle: 'flat',             // No shadows, subtle borders
+    sectionSpacing: 'relaxed',     // More whitespace
+    borderRadius: 'subtle',        // 0.5rem border radius
+    colorIntensity: 'muted'        // Desaturated colors
+  },
+  bold: {
+    name: 'Bold',
+    heroLayout: 'fullwidth',       // Full-width hero with overlay
+    cardStyle: 'solid',            // Solid background fills
+    sectionSpacing: 'compact',     // Tighter sections
+    borderRadius: 'sharp',         // 0.25rem border radius
+    colorIntensity: 'vibrant'      // Saturated colors
+  },
+  elegant: {
+    name: 'Elegant',
+    heroLayout: 'asymmetric',      // Offset layout
+    cardStyle: 'outlined',         // Subtle borders
+    sectionSpacing: 'luxurious',   // Extra whitespace
+    borderRadius: 'rounded',       // 1rem border radius
+    colorIntensity: 'refined'      // Slightly desaturated
+  }
+};
+
+// Map industries to layout variants
+const INDUSTRY_VARIANTS = {
+  lawyer: 'elegant',
+  'real-estate': 'minimal',
+  restaurant: 'bold',
+  retail: 'classic',
+  plumber: 'bold',
+  electrician: 'bold',
+  'home-services': 'classic',
+  dentist: 'minimal',
+  general: 'classic'
+};
+
 // Handle both ESM and bundled CJS environments
 const __dirname = import.meta.url
   ? path.dirname(fileURLToPath(import.meta.url))
@@ -194,6 +243,170 @@ export class TemplateBuilder {
     return FONT_PAIRINGS[fontStyle] || FONT_PAIRINGS.modern;
   }
 
+  /**
+   * Get layout variant for an industry
+   */
+  getLayoutVariant(industry) {
+    const variantName = INDUSTRY_VARIANTS[industry] || INDUSTRY_VARIANTS.general;
+    return LAYOUT_VARIANTS[variantName] || LAYOUT_VARIANTS.classic;
+  }
+
+  /**
+   * Generate variant-specific CSS
+   */
+  generateVariantCSS(variant) {
+    const spacingMap = {
+      compact: { section: '3rem', gap: '1.5rem' },
+      normal: { section: '5rem', gap: '2rem' },
+      relaxed: { section: '6rem', gap: '2.5rem' },
+      luxurious: { section: '8rem', gap: '3rem' }
+    };
+
+    const radiusMap = {
+      sharp: '0.25rem',
+      subtle: '0.5rem',
+      rounded: '1rem'
+    };
+
+    const spacing = spacingMap[variant.sectionSpacing] || spacingMap.normal;
+    const radius = radiusMap[variant.borderRadius] || radiusMap.rounded;
+
+    let css = `
+      /* Layout Variant: ${variant.name} */
+      :root {
+        --section-padding: ${spacing.section};
+        --grid-gap: ${spacing.gap};
+        --border-radius: ${radius};
+        --border-radius-lg: calc(${radius} * 1.5);
+      }
+    `;
+
+    // Hero layout variants
+    if (variant.heroLayout === 'centered') {
+      css += `
+        .hero .container {
+          grid-template-columns: 1fr;
+          text-align: center;
+          max-width: 800px;
+        }
+        .hero-content { order: 1; }
+        .hero-image { order: 2; margin-top: 2rem; }
+        .hero h1 { font-size: 3.5rem; }
+        .hero p { margin-left: auto; margin-right: auto; }
+      `;
+    } else if (variant.heroLayout === 'fullwidth') {
+      css += `
+        .hero {
+          position: relative;
+          min-height: 80vh;
+          display: flex;
+          align-items: center;
+          background-size: cover;
+          background-position: center;
+        }
+        .hero::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 100%);
+        }
+        .hero .container {
+          position: relative;
+          z-index: 1;
+          grid-template-columns: 1fr;
+          max-width: 900px;
+        }
+        .hero h1, .hero p { color: white; }
+        .hero h1 { font-size: 4rem; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .hero-image { display: none; }
+      `;
+    } else if (variant.heroLayout === 'asymmetric') {
+      css += `
+        .hero .container {
+          grid-template-columns: 1.2fr 0.8fr;
+          gap: 6rem;
+        }
+        .hero-image img {
+          transform: translateY(2rem);
+          box-shadow: -20px 20px 60px rgba(0,0,0,0.15);
+        }
+      `;
+    }
+
+    // Card style variants
+    if (variant.cardStyle === 'flat') {
+      css += `
+        .service-card {
+          background: transparent;
+          border: 1px solid var(--color-text-light);
+          border-opacity: 0.2;
+        }
+        .service-card:hover {
+          transform: none;
+          box-shadow: none;
+          border-color: var(--color-primary);
+        }
+      `;
+    } else if (variant.cardStyle === 'solid') {
+      css += `
+        .service-card {
+          background: var(--color-primary);
+          color: white;
+        }
+        .service-card p { color: rgba(255,255,255,0.85); }
+        .service-card:hover {
+          transform: scale(1.02);
+        }
+      `;
+    } else if (variant.cardStyle === 'outlined') {
+      css += `
+        .service-card {
+          background: white;
+          border: 2px solid var(--color-surface);
+          transition: border-color 0.3s;
+        }
+        .service-card:hover {
+          border-color: var(--color-primary);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+      `;
+    }
+
+    // Color intensity variants
+    if (variant.colorIntensity === 'muted') {
+      css += `
+        :root {
+          --color-primary: color-mix(in srgb, var(--color-primary) 70%, gray);
+        }
+        .testimonials-section {
+          background: var(--color-surface);
+          color: var(--color-text);
+        }
+      `;
+    } else if (variant.colorIntensity === 'vibrant') {
+      css += `
+        .btn-primary {
+          background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+        }
+        .cta-banner {
+          background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+          color: white;
+        }
+        .cta-banner h2, .cta-banner p { color: white; }
+      `;
+    } else if (variant.colorIntensity === 'refined') {
+      css += `
+        .hero { background: linear-gradient(180deg, var(--color-surface) 0%, white 100%); }
+        .service-card { background: white; }
+        .testimonials-section {
+          background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 80%, black) 100%);
+        }
+      `;
+    }
+
+    return css;
+  }
+
   generateCSS(colors, config, industry = 'general') {
     const colorMapping = config.colorMapping || {};
     const fallback = colorMapping.fallback || {
@@ -323,6 +536,19 @@ export class TemplateBuilder {
     const fonts = this.getFontPairing(industry);
     const googleFontsUrl = `https://fonts.googleapis.com/css2?${fonts.googleFonts}&display=swap`;
 
+    // Get layout variant CSS
+    const variant = this.getLayoutVariant(industry);
+    const variantCSS = this.generateVariantCSS(variant);
+
+    // Get hero image for fullwidth variant background
+    const heroImage = siteData.images?.[0]?.src;
+    const heroStyle = variant.heroLayout === 'fullwidth' && heroImage
+      ? `style="background-image: url('${heroImage}');"`
+      : '';
+
+    // Add variant class to body for additional styling hooks
+    const variantClass = `variant-${variant.name.toLowerCase()}`;
+
     return `<!DOCTYPE html>
 <html lang="${language}">
 <head>
@@ -336,10 +562,11 @@ export class TemplateBuilder {
   <style>
 ${baseCSS}
 ${customCSS}
+${variantCSS}
   </style>
 </head>
-<body>
-${sections.join('\n')}
+<body class="${variantClass}">
+${sections.join('\n').replace('<section class="hero"', `<section class="hero" ${heroStyle}`)}
 </body>
 </html>`;
   }
