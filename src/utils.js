@@ -184,6 +184,30 @@ export function slugify(name) {
 }
 
 /**
+ * Generate a unique preview slug from a business name
+ * Combines slugified name with a random hash for uniqueness
+ * @param {string} businessName - Business name
+ * @returns {string} - Unique URL-safe slug (e.g., "joes-plumbing-a1b2c3d4")
+ */
+export function generatePreviewSlug(businessName) {
+  const base = slugify(businessName || 'preview');
+  // Generate 8 random hex characters
+  const randomBytes = new Uint8Array(4);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(randomBytes);
+  } else {
+    // Fallback for Node.js environment
+    for (let i = 0; i < 4; i++) {
+      randomBytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  const hash = Array.from(randomBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `${base}-${hash}`;
+}
+
+/**
  * Format a duration in milliseconds to human-readable string
  * @param {number} ms - Duration in milliseconds
  * @returns {string} - Formatted duration (e.g., "2.5s", "1m 30s")
@@ -233,6 +257,7 @@ export default {
   isSameUrl,
   truncate,
   slugify,
+  generatePreviewSlug,
   formatDuration,
   retry
 };

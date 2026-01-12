@@ -410,13 +410,13 @@ export class BatchProcessor {
           if (scoringMethod !== 'pageSpeed') scoringMethod = 'browser';
         } catch (error) {
           log.warn('Browser scoring failed', { url: lead.website, error: error.message });
-          // Mark as potential target with unknown score
+          // Skip sites we can't score - don't assume they're targets
           scoreResult = {
-            score: 50, // Middle score - unknown
-            isTarget: true,
+            score: null,  // Unknown
+            isTarget: false,  // Can't target what we can't assess
             isPrimeTarget: false,
-            issues: ['Scoring failed'],
-            method: 'fallback'
+            issues: ['Site unreachable'],
+            method: 'failed'
           };
         }
       }
@@ -426,8 +426,9 @@ export class BatchProcessor {
         ...lead,
         siteScore: scoreResult.score,
         siteIssues: scoreResult.issues,
-        isTarget: scoreResult.score < maxScore,
-        isPrimeTarget: scoreResult.score < this.config.primeScoreThreshold,
+        // Use the pre-computed values from scorer, handle null scores
+        isTarget: scoreResult.score !== null && scoreResult.score < maxScore,
+        isPrimeTarget: scoreResult.score !== null && scoreResult.score < this.config.primeScoreThreshold,
         scoringMethod: scoreResult.method
       });
 
@@ -435,8 +436,9 @@ export class BatchProcessor {
     }
 
     // Filter to targets and sort (lower score = worse site = better target)
+    // Skip null scores (unreachable sites)
     const targets = results
-      .filter(l => l.siteScore < maxScore)
+      .filter(l => l.siteScore !== null && l.siteScore < maxScore)
       .sort((a, b) => a.siteScore - b.siteScore);
 
     // Calculate stats

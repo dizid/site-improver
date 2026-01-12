@@ -88,30 +88,31 @@ export const PIPELINE_STATUS = {
 };
 
 export const STATUS_INFO = {
-  [PIPELINE_STATUS.DISCOVERED]: { label: 'Discovered', color: 'blue', stage: 1 },
-  [PIPELINE_STATUS.SCORING]: { label: 'Scoring', color: 'blue', stage: 1 },
-  [PIPELINE_STATUS.QUALIFIED]: { label: 'Qualified', color: 'blue', stage: 1 },
-  [PIPELINE_STATUS.DISQUALIFIED]: { label: 'Disqualified', color: 'gray', stage: 1 },
-  [PIPELINE_STATUS.QUEUED]: { label: 'Queued', color: 'yellow', stage: 2 },
-  [PIPELINE_STATUS.SCRAPING]: { label: 'Scraping', color: 'yellow', stage: 2 },
-  [PIPELINE_STATUS.SCRAPED]: { label: 'Scraped', color: 'yellow', stage: 2 },
-  [PIPELINE_STATUS.BUILDING]: { label: 'Building', color: 'yellow', stage: 3 },
-  [PIPELINE_STATUS.DEPLOYING]: { label: 'Deploying', color: 'yellow', stage: 3 },
-  [PIPELINE_STATUS.DEPLOYED]: { label: 'Deployed', color: 'green', stage: 4 },
-  [PIPELINE_STATUS.EMAILING]: { label: 'Emailing', color: 'green', stage: 5 },
-  [PIPELINE_STATUS.FOLLOW_UP_1]: { label: 'Follow-up 1', color: 'green', stage: 5 },
-  [PIPELINE_STATUS.FOLLOW_UP_2]: { label: 'Follow-up 2', color: 'green', stage: 5 },
-  [PIPELINE_STATUS.LAST_CHANCE]: { label: 'Last Chance', color: 'orange', stage: 6 },
-  [PIPELINE_STATUS.CONVERTED]: { label: 'Converted', color: 'purple', stage: 7 },
-  [PIPELINE_STATUS.EXPIRED]: { label: 'Expired', color: 'red', stage: 7 },
+  // User-friendly labels that describe the current state clearly
+  [PIPELINE_STATUS.DISCOVERED]: { label: 'New Lead', color: 'blue', stage: 1 },
+  [PIPELINE_STATUS.SCORING]: { label: 'Analyzing...', color: 'blue', stage: 1 },
+  [PIPELINE_STATUS.QUALIFIED]: { label: 'Ready to Process', color: 'green', stage: 1 },
+  [PIPELINE_STATUS.DISQUALIFIED]: { label: 'Not a Match', color: 'gray', stage: 1 },
+  [PIPELINE_STATUS.QUEUED]: { label: 'In Queue', color: 'yellow', stage: 2 },
+  [PIPELINE_STATUS.SCRAPING]: { label: 'Analyzing Site...', color: 'yellow', stage: 2 },
+  [PIPELINE_STATUS.SCRAPED]: { label: 'Site Analyzed', color: 'yellow', stage: 2 },
+  [PIPELINE_STATUS.BUILDING]: { label: 'Building Preview...', color: 'yellow', stage: 3 },
+  [PIPELINE_STATUS.DEPLOYING]: { label: 'Deploying...', color: 'yellow', stage: 3 },
+  [PIPELINE_STATUS.DEPLOYED]: { label: 'Preview Ready', color: 'green', stage: 4 },
+  [PIPELINE_STATUS.EMAILING]: { label: 'Email Sent', color: 'purple', stage: 5 },
+  [PIPELINE_STATUS.FOLLOW_UP_1]: { label: '1st Follow-up', color: 'purple', stage: 5 },
+  [PIPELINE_STATUS.FOLLOW_UP_2]: { label: '2nd Follow-up', color: 'purple', stage: 5 },
+  [PIPELINE_STATUS.LAST_CHANCE]: { label: 'Final Outreach', color: 'orange', stage: 6 },
+  [PIPELINE_STATUS.CONVERTED]: { label: 'Customer!', color: 'green', stage: 7 },
+  [PIPELINE_STATUS.EXPIRED]: { label: 'Expired', color: 'gray', stage: 7 },
   [PIPELINE_STATUS.DELETED]: { label: 'Deleted', color: 'gray', stage: 7 },
-  [PIPELINE_STATUS.ERROR]: { label: 'Error', color: 'red', stage: 0 },
+  [PIPELINE_STATUS.ERROR]: { label: 'Failed', color: 'red', stage: 0 },
   // Legacy status mappings for backwards compatibility
   pending: { label: 'Pending', color: 'gray', stage: 1 },
-  emailed: { label: 'Emailed', color: 'blue', stage: 5 },
+  emailed: { label: 'Email Sent', color: 'purple', stage: 5 },
   responded: { label: 'Responded', color: 'yellow', stage: 6 },
-  converted: { label: 'Converted', color: 'green', stage: 7 },
-  expired: { label: 'Expired', color: 'red', stage: 7 }
+  converted: { label: 'Customer!', color: 'green', stage: 7 },
+  expired: { label: 'Expired', color: 'gray', stage: 7 }
 };
 
 export const TOTAL_STAGES = 7;

@@ -529,6 +529,100 @@ export function createServer(config = {}) {
     }
   });
 
+  // ==================== PREVIEW API ====================
+
+  // Get preview metadata by slug
+  app.get('/api/preview/:slug', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const preview = await db.getPreviewBySlug(slug);
+
+    if (!preview) {
+      throw ApiError.notFound('Preview not found');
+    }
+
+    // Check expiration
+    if (preview.expiresAt && new Date(preview.expiresAt) < new Date()) {
+      return res.status(410).json({
+        error: 'Preview expired',
+        expired: true
+      });
+    }
+
+    // Increment view count (don't await - fire and forget)
+    db.incrementViewCount(slug).catch(err => {
+      log.debug('Failed to increment view count', { error: err.message });
+    });
+
+    // Return metadata without full HTML to reduce payload
+    const { html, siteData, slots, ...metadata } = preview;
+    res.json(metadata);
+  }));
+
+  // Get preview raw HTML (for iframe)
+  app.get('/api/preview/:slug/html', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const preview = await db.getPreviewBySlug(slug);
+
+    if (!preview) {
+      return res.status(404).type('html').send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Not Found</title></head>
+        <body style="font-family: system-ui; padding: 4rem; text-align: center;">
+          <h1>Preview Not Found</h1>
+          <p>This preview doesn't exist or has been removed.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Check expiration
+    if (preview.expiresAt && new Date(preview.expiresAt) < new Date()) {
+      return res.status(410).type('html').send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Expired</title></head>
+        <body style="font-family: system-ui; padding: 4rem; text-align: center;">
+          <h1>Preview Expired</h1>
+          <p>This preview has expired. Contact us if you'd like to see it again.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    res.type('html').send(preview.html);
+  }));
+
+  // Get all previews (admin)
+  app.get('/api/previews', asyncHandler(async (req, res) => {
+    const { status, limit } = req.query;
+    const previews = await db.getPreviews({
+      status,
+      limit: limit ? parseInt(limit) : 50
+    });
+
+    // Return without full HTML
+    const summarized = previews.map(p => {
+      const { html, siteData, slots, ...rest } = p;
+      return rest;
+    });
+
+    res.json(summarized);
+  }));
+
+  // Delete preview by slug
+  app.delete('/api/preview/:slug', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    await db.deletePreview(slug);
+    res.json({ success: true });
+  }));
+
+  // Cleanup expired previews
+  app.post('/api/previews/cleanup', asyncHandler(async (req, res) => {
+    const deleted = await db.cleanupExpiredPreviews();
+    res.json({ deleted });
+  }));
+
   // ==================== HANDOVER / EXPORT ====================
 
   // Export site HTML for handover

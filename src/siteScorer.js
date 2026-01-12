@@ -7,6 +7,10 @@ import { CONFIG, getSpeedScore, classifyScore } from './config.js';
 
 const log = logger.child('siteScorer');
 
+// Score cache to avoid re-scoring the same site
+const scoreCache = new Map();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
 export class SiteScorer {
   constructor(options = {}) {
     this.timeout = options.timeout || CONFIG.timeouts.scoring;
@@ -21,6 +25,14 @@ export class SiteScorer {
    * Score a single site (0-100, lower = worse = better target)
    */
   async score(url) {
+    // Check cache first
+    const cacheKey = url.replace(/\/$/, '').toLowerCase();
+    const cached = scoreCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      log.debug('Using cached score', { url, score: cached.result.score });
+      return { ...cached.result, fromCache: true };
+    }
+
     const browser = await chromium.launch();
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -85,36 +97,67 @@ export class SiteScorer {
       weightedScore += scores.mobile * 20;
 
       // 4. Modern Design Indicators (weight: 25)
+      // Uses actual computed styles instead of string matching for reliability
       const designScore = await page.evaluate(() => {
         let score = 0;
-        const html = document.documentElement.outerHTML.toLowerCase();
-        const styles = Array.from(document.styleSheets).map(s => {
-          try { return Array.from(s.cssRules).map(r => r.cssText).join(' '); }
-          catch { return ''; }
-        }).join(' ').toLowerCase();
 
-        // Modern CSS features
-        if (styles.includes('flexbox') || styles.includes('display: flex') || styles.includes('display:flex')) score += 15;
-        if (styles.includes('grid') || styles.includes('display: grid')) score += 15;
-        if (styles.includes('border-radius')) score += 10;
-        if (styles.includes('transition') || styles.includes('animation')) score += 10;
-        
-        // Modern fonts
-        const fonts = ['inter', 'roboto', 'open sans', 'lato', 'montserrat', 'poppins'];
-        if (fonts.some(f => html.includes(f) || styles.includes(f))) score += 15;
-        
-        // Not using tables for layout
+        // Check for actual CSS Grid/Flexbox use via computed styles
+        const elements = document.querySelectorAll('header, nav, main, footer, section, article, div');
+        let hasFlexbox = false;
+        let hasGrid = false;
+        for (const el of elements) {
+          const display = getComputedStyle(el).display;
+          if (display === 'flex' || display === 'inline-flex') hasFlexbox = true;
+          if (display === 'grid' || display === 'inline-grid') hasGrid = true;
+          if (hasFlexbox && hasGrid) break;
+        }
+        if (hasFlexbox) score += 15;
+        if (hasGrid) score += 15;
+
+        // Check for responsive images
+        const hasResponsiveImages = document.querySelectorAll('img[srcset], picture source, img[loading="lazy"]').length > 0;
+        if (hasResponsiveImages) score += 10;
+
+        // Modern typography (check body font-family)
+        const bodyFont = getComputedStyle(document.body).fontFamily.toLowerCase();
+        const modernFonts = ['inter', 'roboto', 'open sans', 'lato', 'montserrat', 'poppins', 'nunito', 'raleway', 'source sans', 'work sans'];
+        const hasModernFont = modernFonts.some(f => bodyFont.includes(f));
+        // Also check if NOT using old defaults
+        const oldFonts = ['times new roman', 'times', 'arial', 'courier', 'comic sans'];
+        const hasOldFont = oldFonts.some(f => bodyFont.includes(f)) && !hasModernFont;
+        if (hasModernFont) score += 15;
+        if (hasOldFont) score -= 10;
+
+        // Check for rounded corners on interactive elements
+        const buttons = document.querySelectorAll('button, .btn, [class*="button"], a[class*="btn"]');
+        const hasRoundedCorners = Array.from(buttons).some(el => {
+          const radius = parseFloat(getComputedStyle(el).borderRadius);
+          return radius > 2;
+        });
+        if (hasRoundedCorners) score += 10;
+
+        // Check for transitions/animations (subtle interactivity)
+        const hasTransitions = Array.from(elements).slice(0, 50).some(el => {
+          const transition = getComputedStyle(el).transition;
+          return transition && transition !== 'none' && transition !== 'all 0s ease 0s';
+        });
+        if (hasTransitions) score += 10;
+
+        // Not using tables for layout (tables with colspan/rowspan in main content = layout abuse)
         const tables = document.querySelectorAll('table');
-        const layoutTables = Array.from(tables).filter(t => 
-          !t.closest('article') && t.querySelectorAll('tr').length > 2
-        );
-        if (layoutTables.length === 0) score += 15;
-        
-        // Has modern framework indicators
-        if (html.includes('react') || html.includes('vue') || html.includes('next') || 
-            html.includes('nuxt') || html.includes('tailwind')) score += 20;
+        const hasLayoutTables = Array.from(tables).some(t => {
+          // Data tables are fine, layout tables are not
+          const inContent = t.closest('article, .content, main');
+          const hasLayoutAttrs = t.querySelector('td[colspan], td[rowspan], td[width], table[width]');
+          return hasLayoutAttrs && !inContent;
+        });
+        if (!hasLayoutTables && tables.length < 5) score += 15;
 
-        return Math.min(score, 100);
+        // Check for semantic HTML (modern practice)
+        const hasSemanticHTML = document.querySelectorAll('header, nav, main, footer, article, section, aside').length >= 3;
+        if (hasSemanticHTML) score += 10;
+
+        return Math.max(0, Math.min(score, 100));
       });
 
       scores.modern = designScore;
@@ -159,7 +202,7 @@ export class SiteScorer {
 
       await browser.close();
 
-      return {
+      const result = {
         url,
         score: finalScore,
         scores,
@@ -170,19 +213,25 @@ export class SiteScorer {
         recommendation: this.getRecommendation(finalScore)
       };
 
+      // Cache the result
+      scoreCache.set(cacheKey, { result, timestamp: Date.now() });
+      log.debug('Cached score', { url, score: finalScore });
+
+      return result;
+
     } catch (error) {
       await browser.close();
-      
-      // Site failed to load = prime target
+
+      // Site failed to load = SKIP (can't improve what we can't access)
       return {
         url,
-        score: 0,
+        score: null,  // Unknown, not 0
         scores,
-        issues: ['Site failed to load: ' + error.message],
+        issues: ['Site unreachable: ' + error.message],
         loadTime: null,
-        isTarget: true,
-        isPrimeTarget: true,
-        recommendation: 'prime_target',
+        isTarget: false,  // Don't target unreachable sites
+        isPrimeTarget: false,
+        recommendation: 'skip',
         error: error.message
       };
     }
@@ -199,10 +248,11 @@ export class SiteScorer {
       const batchResults = await Promise.all(
         batch.map(url => this.score(url).catch(e => ({
           url,
-          score: 0,
+          score: null,  // Unknown - don't assume it's a good target
           error: e.message,
-          isTarget: true,
-          isPrimeTarget: true
+          isTarget: false,  // Skip unreachable sites
+          isPrimeTarget: false,
+          recommendation: 'skip'
         })))
       );
       results.push(...batchResults);

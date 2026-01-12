@@ -784,6 +784,269 @@ export const saveDb = async (deployments) => {
   await saveLocalDb(localDb);
 };
 
+// ==================== PREVIEW FUNCTIONS ====================
+
+function generatePreviewId() {
+  return `preview_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+/**
+ * Create a new preview
+ * @param {Object} data - Preview data
+ * @param {string} data.slug - URL-friendly slug (unique)
+ * @param {string} data.originalUrl - Original website URL
+ * @param {string} data.businessName - Business name
+ * @param {string} data.industry - Detected industry
+ * @param {string} data.html - Full rendered HTML
+ * @param {Object} data.siteData - Scraped site data (JSON)
+ * @param {Object} data.slots - Template slots (JSON)
+ * @param {string} data.status - Status (pending, generating, complete, failed)
+ * @param {string} data.expiresAt - Expiration date ISO string
+ */
+export async function createPreview(data) {
+  const timestamp = new Date().toISOString();
+  const previewId = generatePreviewId();
+
+  const preview = {
+    id: previewId,
+    slug: data.slug,
+    originalUrl: data.originalUrl,
+    businessName: data.businessName || 'Unknown',
+    industry: data.industry || 'general',
+    html: data.html,
+    siteData: data.siteData || null,
+    slots: data.slots || null,
+    status: data.status || 'complete',
+    expiresAt: data.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    viewCount: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('previews').doc(previewId).set(preview);
+    log.info('Preview created in Firebase', { previewId, slug: data.slug });
+  } else {
+    const localDb = await loadLocalDb();
+    localDb.previews = localDb.previews || [];
+    localDb.previews.push(preview);
+    await saveLocalDb(localDb);
+    log.info('Preview created locally', { previewId, slug: data.slug });
+  }
+
+  return preview;
+}
+
+/**
+ * Get preview by slug
+ * @param {string} slug - Preview slug
+ */
+export async function getPreviewBySlug(slug) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const snapshot = await db.collection('previews')
+      .where('slug', '==', slug)
+      .limit(1)
+      .get();
+    if (snapshot.empty) return null;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+  } else {
+    const localDb = await loadLocalDb();
+    return (localDb.previews || []).find(p => p.slug === slug) || null;
+  }
+}
+
+/**
+ * Get preview by ID
+ * @param {string} previewId - Preview ID
+ */
+export async function getPreviewById(previewId) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const doc = await db.collection('previews').doc(previewId).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
+  } else {
+    const localDb = await loadLocalDb();
+    return (localDb.previews || []).find(p => p.id === previewId) || null;
+  }
+}
+
+/**
+ * Get all previews with optional filters
+ * @param {Object} filters - Optional filters
+ */
+export async function getPreviews(filters = {}) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    let query = db.collection('previews');
+
+    if (filters.status) {
+      query = query.where('status', '==', filters.status);
+    }
+
+    query = query.orderBy('createdAt', 'desc');
+
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    const snapshot = await query.get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } else {
+    const localDb = await loadLocalDb();
+    let previews = localDb.previews || [];
+
+    if (filters.status) {
+      previews = previews.filter(p => p.status === filters.status);
+    }
+
+    previews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    if (filters.limit) {
+      previews = previews.slice(0, filters.limit);
+    }
+
+    return previews;
+  }
+}
+
+/**
+ * Update a preview
+ * @param {string} slug - Preview slug
+ * @param {Object} updates - Fields to update
+ */
+export async function updatePreview(slug, updates) {
+  const timestamp = new Date().toISOString();
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const snapshot = await db.collection('previews')
+      .where('slug', '==', slug)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      throw new Error(`Preview not found: ${slug}`);
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    await docRef.update({
+      ...updates,
+      updatedAt: timestamp
+    });
+
+    log.debug('Preview updated in Firebase', { slug });
+    return getPreviewBySlug(slug);
+  } else {
+    const localDb = await loadLocalDb();
+    const index = (localDb.previews || []).findIndex(p => p.slug === slug);
+
+    if (index === -1) {
+      throw new Error(`Preview not found: ${slug}`);
+    }
+
+    localDb.previews[index] = {
+      ...localDb.previews[index],
+      ...updates,
+      updatedAt: timestamp
+    };
+
+    await saveLocalDb(localDb);
+    log.debug('Preview updated locally', { slug });
+    return localDb.previews[index];
+  }
+}
+
+/**
+ * Delete a preview
+ * @param {string} slug - Preview slug
+ */
+export async function deletePreview(slug) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const snapshot = await db.collection('previews')
+      .where('slug', '==', slug)
+      .limit(1)
+      .get();
+
+    if (!snapshot.empty) {
+      await snapshot.docs[0].ref.delete();
+      log.debug('Preview deleted from Firebase', { slug });
+    }
+  } else {
+    const localDb = await loadLocalDb();
+    localDb.previews = (localDb.previews || []).filter(p => p.slug !== slug);
+    await saveLocalDb(localDb);
+    log.debug('Preview deleted locally', { slug });
+  }
+}
+
+/**
+ * Increment preview view count
+ * @param {string} slug - Preview slug
+ */
+export async function incrementViewCount(slug) {
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const snapshot = await db.collection('previews')
+      .where('slug', '==', slug)
+      .limit(1)
+      .get();
+
+    if (!snapshot.empty) {
+      const docRef = snapshot.docs[0].ref;
+      const current = snapshot.docs[0].data().viewCount || 0;
+      await docRef.update({ viewCount: current + 1 });
+    }
+  } else {
+    const localDb = await loadLocalDb();
+    const preview = (localDb.previews || []).find(p => p.slug === slug);
+    if (preview) {
+      preview.viewCount = (preview.viewCount || 0) + 1;
+      await saveLocalDb(localDb);
+    }
+  }
+}
+
+/**
+ * Clean up expired previews
+ * @returns {number} Number of deleted previews
+ */
+export async function cleanupExpiredPreviews() {
+  const now = new Date().toISOString();
+  let deleted = 0;
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const snapshot = await db.collection('previews')
+      .where('expiresAt', '<', now)
+      .get();
+
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+      deleted++;
+    });
+    await batch.commit();
+  } else {
+    const localDb = await loadLocalDb();
+    const originalLength = (localDb.previews || []).length;
+    localDb.previews = (localDb.previews || []).filter(p =>
+      !p.expiresAt || new Date(p.expiresAt) >= new Date(now)
+    );
+    deleted = originalLength - localDb.previews.length;
+    await saveLocalDb(localDb);
+  }
+
+  if (deleted > 0) {
+    log.info('Cleaned up expired previews', { deleted });
+  }
+  return deleted;
+}
+
 export default {
   // Lead functions
   createLead,
@@ -798,6 +1061,15 @@ export default {
   getDeployments,
   updateDeployment,
   deleteDeployment,
+  // Preview functions
+  createPreview,
+  getPreviewBySlug,
+  getPreviewById,
+  getPreviews,
+  updatePreview,
+  deletePreview,
+  incrementViewCount,
+  cleanupExpiredPreviews,
   // Error tracking
   logPipelineError,
   getPipelineErrors,
