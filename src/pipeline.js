@@ -7,6 +7,7 @@ import { saveDeployment } from './db.js';
 import logger from './logger.js';
 import { extractCity } from './utils.js';
 import { getFeatures } from './config.js';
+import { ImageService, selectHeroImage } from './imageService.js';
 
 const log = logger.child('pipeline');
 
@@ -41,8 +42,38 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     throw createPipelineError(`Failed to scrape site: ${error.message}`, 'scrape', error);
   }
 
-  // 2. Build template
-  log.info('Step 2: Building template...');
+  // 2. Enhance images (select hero from scraped or stock photos)
+  log.info('Step 2: Selecting hero image...');
+  try {
+    const imageService = new ImageService();
+    // Detect industry first for stock photo selection
+    const builder = new TemplateBuilder(options.templatesDir);
+    await builder.init();
+    const detectedIndustry = builder.detectIndustry(siteData);
+    siteData.industry = detectedIndustry;
+
+    const heroImage = await selectHeroImage(siteData, imageService);
+    if (heroImage) {
+      // Inject hero image into site data for template
+      if (!siteData.images) siteData.images = [];
+      siteData.images.unshift({
+        src: heroImage.url,
+        alt: heroImage.alt,
+        source: heroImage.source
+      });
+      if (heroImage.attribution) {
+        siteData.heroAttribution = heroImage.attribution;
+      }
+      log.info('Hero image selected', { source: heroImage.source });
+    } else {
+      log.debug('No hero image available, template will use gradient');
+    }
+  } catch (error) {
+    log.warn('Image enhancement failed, continuing', { error: error.message });
+  }
+
+  // 3. Build template
+  log.info('Step 3: Building template...');
   let slots, industry, builder;
   try {
     builder = new TemplateBuilder(options.templatesDir);
@@ -56,27 +87,35 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     throw createPipelineError(`Failed to build template: ${error.message}`, 'build', error);
   }
 
-  // 3. AI Polish (optional - graceful degradation)
+  // 4. AI Polish & Content Generation (optional - graceful degradation)
   let polishedSlots = slots;
   const shouldPolish = !options.skipPolish && features.aiPolish;
 
   if (shouldPolish) {
-    log.info('Step 3: Polishing copy with AI...');
+    log.info('Step 4: Polishing copy with AI...');
     try {
       const polisher = new AIPolisher();
-      polishedSlots = await polisher.polishAll(slots, siteData);
+
+      // Check if we need to generate missing content
+      if (polisher.needsContentGeneration(siteData, slots)) {
+        log.info('Content is weak, generating missing content...');
+        polishedSlots = await polisher.generateMissingContent(siteData, slots);
+      }
+
+      // Polish all content (including generated)
+      polishedSlots = await polisher.polishAll(polishedSlots, siteData);
     } catch (error) {
       log.warn('AI polish failed, using raw content', { error: error.message });
       // Continue with unpolished slots - graceful degradation
     }
   } else if (!options.skipPolish && !features.aiPolish) {
-    log.info('Step 3: AI polish skipped - ANTHROPIC_API_KEY not configured');
+    log.info('Step 4: AI polish skipped - ANTHROPIC_API_KEY not configured');
   } else {
-    log.info('Step 3: AI polish skipped by request');
+    log.info('Step 4: AI polish skipped by request');
   }
 
-  // 4. Generate final HTML
-  log.info('Step 4: Generating HTML...');
+  // 5. Generate final HTML
+  log.info('Step 5: Generating HTML...');
   let finalHtml;
   try {
     finalHtml = await builder.buildWithSlots(siteData, polishedSlots);
@@ -84,12 +123,12 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     throw createPipelineError(`Failed to generate HTML: ${error.message}`, 'generate', error);
   }
 
-  // 5. Deploy to Netlify (optional - graceful degradation)
+  // 6. Deploy to Netlify (optional - graceful degradation)
   let deployment = null;
   const shouldDeploy = !options.skipDeploy && features.deploy;
 
   if (shouldDeploy) {
-    log.info('Step 5: Deploying to Netlify...');
+    log.info('Step 6: Deploying to Netlify...');
     try {
       const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
       deployment = await deployer.deploy(finalHtml, siteData.businessName || 'preview');
@@ -98,9 +137,9 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
       // Continue without deployment - graceful degradation
     }
   } else if (!options.skipDeploy && !features.deploy) {
-    log.info('Step 5: Netlify deploy skipped - NETLIFY_AUTH_TOKEN not configured');
+    log.info('Step 6: Netlify deploy skipped - NETLIFY_AUTH_TOKEN not configured');
   } else {
-    log.info('Step 5: Netlify deploy skipped by request');
+    log.info('Step 6: Netlify deploy skipped by request');
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);

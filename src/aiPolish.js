@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import logger from './logger.js';
 import { CONFIG } from './config.js';
 import { extractCity, safeParseJsonArray, safeParseJsonObject } from './utils.js';
+import { getIndustryContent, getRandomUSPs, getRandomBenefits } from './industryContent.js';
 
 const log = logger.child('aiPolish');
 
@@ -10,19 +11,31 @@ export class AIPolisher {
   constructor(apiKey) {
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
     this.client = null;
-    this.systemPrompt = `You are an expert copywriter specializing in local business websites.
-Your job is to transform mediocre or generic copy into compelling, conversion-focused content.
+    this.language = 'en';
+  }
 
-Guidelines:
-- Be concise and punchy - no fluff
-- Focus on benefits, not features
-- Use active voice
-- Create urgency without being sleazy
-- Match the tone to the industry (professional for lawyers, friendly for home services, warm for restaurants)
-- Keep local/personal feel - don't sound corporate
-- Preserve any specific details (years in business, service areas, etc.)
+  getSystemPrompt() {
+    const languageNames = {
+      nl: 'Dutch', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', en: 'English'
+    };
+    const langName = languageNames[this.language] || 'the same language as the input';
 
-Return ONLY the improved text, no explanations or quotes around it.`;
+    return `You are a world-class copywriter creating premium website content.
+Your goal is to transform ordinary copy into exceptional, conversion-focused content that feels professionally crafted.
+
+CRITICAL LANGUAGE RULE: Write ALL output in ${langName}. Do NOT translate to English. Keep the SAME language as the input content.
+
+Quality Standards:
+- Every word must earn its place - absolutely no filler or fluff
+- Headlines should stop readers in their tracks - be bold and specific
+- Benefits over features, always - show the transformation, not just the service
+- Create genuine urgency without manipulation or false scarcity
+- Sound human, local, and trustworthy - never corporate or generic
+- Preserve specific details (years in business, service areas, specialties, unique selling points)
+- Match tone to industry: authoritative for professionals, warm for home services, inviting for hospitality
+- Use power words and emotional triggers appropriate to the local market
+
+Return ONLY the improved text in ${langName}, no explanations or quotes.`;
   }
 
   getClient() {
@@ -77,7 +90,7 @@ Location: ${context.city || 'local area'}`
       const response = await this.getClient().messages.create({
         model: CONFIG.ai.model,
         max_tokens: CONFIG.ai.maxTokens.slot,
-        system: this.systemPrompt,
+        system: this.getSystemPrompt(),
         messages: [{ role: 'user', content: prompt }]
       });
 
@@ -103,7 +116,7 @@ Return as JSON array: [{"name": "...", "description": "..."}, ...]`;
       const response = await this.getClient().messages.create({
         model: CONFIG.ai.model,
         max_tokens: CONFIG.ai.maxTokens.services,
-        system: this.systemPrompt,
+        system: this.getSystemPrompt(),
         messages: [{ role: 'user', content: prompt }]
       });
 
@@ -117,12 +130,17 @@ Return as JSON array: [{"name": "...", "description": "..."}, ...]`;
   }
 
   async polishAll(slots, siteData) {
+    // Set language for this polishing session
+    this.language = siteData.language || 'en';
+    log.info('Polishing content', { language: this.language, business: siteData.businessName });
+
     const context = {
       industry: siteData.industry || 'general',
       businessName: siteData.businessName || 'Business',
       city: extractCity(siteData.address),
       services: siteData.services || [],
-      headline: slots.headline
+      headline: slots.headline,
+      language: this.language
     };
 
     const polished = { ...slots };
@@ -200,7 +218,7 @@ Return JSON:
       const response = await this.getClient().messages.create({
         model: CONFIG.ai.model,
         max_tokens: CONFIG.ai.maxTokens.fullSite,
-        system: this.systemPrompt,
+        system: this.getSystemPrompt(),
         messages: [{ role: 'user', content: prompt }]
       });
 
@@ -211,6 +229,232 @@ Return JSON:
     }
 
     return slots;
+  }
+
+  /**
+   * Generate UI strings (navigation, buttons, form labels) in the detected language
+   */
+  async generateUIStrings(language, industry) {
+    this.language = language || 'en';
+
+    const prompt = `Generate website UI text for a ${industry || 'local business'} website.
+
+Return JSON with these UI elements translated appropriately:
+{
+  "nav_services": "Services",
+  "nav_about": "About Us",
+  "nav_contact": "Contact",
+  "nav_reviews": "Reviews",
+  "btn_call": "Call Us",
+  "btn_quote": "Get a Quote",
+  "btn_send": "Send Message",
+  "btn_contact": "Contact Us",
+  "form_name": "Your Name",
+  "form_email": "Your Email",
+  "form_phone": "Your Phone",
+  "form_message": "Your Message",
+  "section_services": "Our Services",
+  "section_why_us": "Why Choose Us",
+  "section_contact": "Get in Touch",
+  "section_hours": "Business Hours",
+  "cta_ready": "Ready to Get Started?",
+  "cta_help": "We're here to help"
+}
+
+Return ONLY valid JSON.`;
+
+    try {
+      const response = await this.getClient().messages.create({
+        model: CONFIG.ai.model,
+        max_tokens: 500,
+        system: this.getSystemPrompt(),
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const text = response.content[0].text;
+      const defaults = {
+        nav_services: 'Services', nav_about: 'About Us', nav_contact: 'Contact', nav_reviews: 'Reviews',
+        btn_call: 'Call Us', btn_quote: 'Get a Quote', btn_send: 'Send Message', btn_contact: 'Contact Us',
+        form_name: 'Your Name', form_email: 'Your Email', form_phone: 'Your Phone', form_message: 'Your Message',
+        section_services: 'Our Services', section_why_us: 'Why Choose Us', section_contact: 'Get in Touch',
+        section_hours: 'Business Hours', cta_ready: 'Ready to Get Started?', cta_help: "We're here to help"
+      };
+      return safeParseJsonObject(text, defaults);
+    } catch (error) {
+      log.warn('Failed to generate UI strings', { error: error.message, language });
+      // Return English defaults
+      return {
+        nav_services: 'Services', nav_about: 'About Us', nav_contact: 'Contact', nav_reviews: 'Reviews',
+        btn_call: 'Call Us', btn_quote: 'Get a Quote', btn_send: 'Send Message', btn_contact: 'Contact Us',
+        form_name: 'Your Name', form_email: 'Your Email', form_phone: 'Your Phone', form_message: 'Your Message',
+        section_services: 'Our Services', section_why_us: 'Why Choose Us', section_contact: 'Get in Touch',
+        section_hours: 'Business Hours', cta_ready: 'Ready to Get Started?', cta_help: "We're here to help"
+      };
+    }
+  }
+  /**
+   * Generate testimonials when none were scraped
+   */
+  async generateTestimonials(siteData, count = 3) {
+    const industry = siteData.industry || 'general';
+    const industryContent = getIndustryContent(industry);
+    const tones = industryContent.testimonialTones || ['satisfied', 'happy'];
+
+    const prompt = `Generate ${count} realistic customer testimonials for a ${industry} business.
+
+Business: ${siteData.businessName || 'Local Business'}
+Location: ${extractCity(siteData.address) || 'local area'}
+Services: ${(siteData.services || []).slice(0, 4).join(', ') || 'various services'}
+
+Requirements:
+- Make them sound authentic and specific (mention actual services if possible)
+- Vary the length (one short, one medium, one longer)
+- Include realistic first names (appropriate for the region)
+- Each should highlight a different benefit: ${industryContent.benefits?.slice(0, 3).join(', ') || 'quality, reliability, professionalism'}
+- Tones to use: ${tones.join(', ')}
+
+Return as JSON array:
+[
+  {"text": "...", "author": "First Name", "rating": 5},
+  ...
+]`;
+
+    try {
+      const response = await this.getClient().messages.create({
+        model: CONFIG.ai.model,
+        max_tokens: 600,
+        system: this.getSystemPrompt(),
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const text = response.content[0].text;
+      const fallback = this.getFallbackTestimonials(siteData);
+      return safeParseJsonArray(text, fallback);
+    } catch (error) {
+      log.warn('Failed to generate testimonials', { error: error.message });
+      return this.getFallbackTestimonials(siteData);
+    }
+  }
+
+  /**
+   * Get fallback testimonials using industry content
+   */
+  getFallbackTestimonials(siteData) {
+    const benefits = getRandomBenefits(siteData.industry || 'general', 3);
+    const names = ['Sarah', 'Michael', 'Jennifer'];
+
+    return benefits.map((benefit, i) => ({
+      text: `${benefit}. Highly recommend!`,
+      author: names[i],
+      rating: 5
+    }));
+  }
+
+  /**
+   * Generate missing content when scraped content is weak
+   */
+  async generateMissingContent(siteData, existingSlots = {}) {
+    const industry = siteData.industry || 'general';
+    const industryContent = getIndustryContent(industry);
+    const city = extractCity(siteData.address);
+
+    // Determine what's missing
+    const hasWeakHeadline = !existingSlots.headline || existingSlots.headline.length < 20;
+    const hasWeakSubheadline = !existingSlots.subheadline || existingSlots.subheadline.length < 30;
+    const hasNoTestimonials = !siteData.testimonials || siteData.testimonials.length === 0;
+    const hasNoWhyUs = !existingSlots.why_us_points || existingSlots.why_us_points.length === 0;
+
+    log.info('Generating missing content', {
+      industry,
+      hasWeakHeadline,
+      hasWeakSubheadline,
+      hasNoTestimonials,
+      hasNoWhyUs
+    });
+
+    const prompt = `Generate compelling website content for a ${industry} business.
+
+Business: ${siteData.businessName || 'Local Business'}
+Location: ${city || 'local area'}
+Services: ${(siteData.services || []).slice(0, 5).join(', ') || 'various services'}
+Existing headline: ${existingSlots.headline || 'None'}
+
+Industry pain points customers face: ${industryContent.painPoints?.slice(0, 2).join('; ') || 'common frustrations'}
+Key benefits to highlight: ${industryContent.benefits?.slice(0, 2).join('; ') || 'quality service'}
+
+Generate the following (return as JSON):
+{
+  ${hasWeakHeadline ? '"headline": "Punchy headline, max 10 words, benefit-focused",' : ''}
+  ${hasWeakSubheadline ? '"subheadline": "Supporting text, max 25 words, builds on headline",' : ''}
+  "cta_text": "Action button text, max 4 words",
+  ${hasNoWhyUs ? '"why_us_points": ["Point 1", "Point 2", "Point 3", "Point 4"],' : ''}
+  "meta_description": "SEO meta description, max 155 chars"
+}`;
+
+    try {
+      const response = await this.getClient().messages.create({
+        model: CONFIG.ai.model,
+        max_tokens: 500,
+        system: this.getSystemPrompt(),
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const text = response.content[0].text;
+      const generated = safeParseJsonObject(text, {});
+
+      // Merge generated content with existing slots
+      const result = { ...existingSlots };
+
+      if (generated.headline && hasWeakHeadline) {
+        result.headline = generated.headline;
+      }
+      if (generated.subheadline && hasWeakSubheadline) {
+        result.subheadline = generated.subheadline;
+      }
+      if (generated.cta_text) {
+        result.cta_text = generated.cta_text;
+      }
+      if (generated.why_us_points && hasNoWhyUs) {
+        result.why_us_points = generated.why_us_points;
+      }
+      if (generated.meta_description) {
+        result.meta_description = generated.meta_description;
+      }
+
+      // Generate testimonials if missing
+      if (hasNoTestimonials) {
+        result.testimonials = await this.generateTestimonials(siteData);
+      }
+
+      log.info('Generated missing content successfully');
+      return result;
+
+    } catch (error) {
+      log.warn('Failed to generate missing content', { error: error.message });
+      // Return fallbacks from industry content
+      return {
+        ...existingSlots,
+        cta_text: industryContent.ctaOptions?.[0] || 'Get Started',
+        why_us_points: hasNoWhyUs ? getRandomUSPs(industry, 4) : existingSlots.why_us_points,
+        testimonials: hasNoTestimonials ? this.getFallbackTestimonials(siteData) : undefined
+      };
+    }
+  }
+
+  /**
+   * Check if content needs generation (is too weak)
+   */
+  needsContentGeneration(siteData, slots) {
+    const hasWeakHeadline = !slots.headline || slots.headline.length < 20;
+    const hasWeakSubheadline = !slots.subheadline || slots.subheadline.length < 30;
+    const hasNoTestimonials = !siteData.testimonials || siteData.testimonials.length === 0;
+    const hasNoServices = !siteData.services || siteData.services.length === 0;
+
+    // Need generation if more than 2 things are weak/missing
+    const weakPoints = [hasWeakHeadline, hasWeakSubheadline, hasNoTestimonials, hasNoServices]
+      .filter(Boolean).length;
+
+    return weakPoints >= 2;
   }
 }
 

@@ -7,6 +7,53 @@ import logger from './logger.js';
 
 const log = logger.child('templateBuilder');
 
+// Font pairings for different industries
+const FONT_PAIRINGS = {
+  modern: {
+    name: 'Modern',
+    heading: "'Inter', sans-serif",
+    body: "'Inter', sans-serif",
+    googleFonts: 'family=Inter:wght@400;600;700;800'
+  },
+  elegant: {
+    name: 'Elegant',
+    heading: "'Playfair Display', serif",
+    body: "'Source Sans Pro', sans-serif",
+    googleFonts: 'family=Playfair+Display:wght@400;600;700&family=Source+Sans+Pro:wght@400;600'
+  },
+  bold: {
+    name: 'Bold',
+    heading: "'Bebas Neue', sans-serif",
+    body: "'Open Sans', sans-serif",
+    googleFonts: 'family=Bebas+Neue&family=Open+Sans:wght@400;600;700'
+  },
+  friendly: {
+    name: 'Friendly',
+    heading: "'Nunito', sans-serif",
+    body: "'Nunito', sans-serif",
+    googleFonts: 'family=Nunito:wght@400;600;700;800'
+  },
+  professional: {
+    name: 'Professional',
+    heading: "'Montserrat', sans-serif",
+    body: "'Roboto', sans-serif",
+    googleFonts: 'family=Montserrat:wght@400;600;700;800&family=Roboto:wght@400;500'
+  }
+};
+
+// Map industries to font pairings
+const INDUSTRY_FONTS = {
+  lawyer: 'elegant',
+  'real-estate': 'professional',
+  restaurant: 'friendly',
+  retail: 'friendly',
+  plumber: 'bold',
+  electrician: 'bold',
+  'home-services': 'bold',
+  dentist: 'professional',
+  general: 'modern'
+};
+
 // Handle both ESM and bundled CJS environments
 const __dirname = import.meta.url
   ? path.dirname(fileURLToPath(import.meta.url))
@@ -139,7 +186,15 @@ export class TemplateBuilder {
     });
   }
 
-  generateCSS(colors, config) {
+  /**
+   * Get font pairing for an industry
+   */
+  getFontPairing(industry) {
+    const fontStyle = INDUSTRY_FONTS[industry] || INDUSTRY_FONTS.general;
+    return FONT_PAIRINGS[fontStyle] || FONT_PAIRINGS.modern;
+  }
+
+  generateCSS(colors, config, industry = 'general') {
     const colorMapping = config.colorMapping || {};
     const fallback = colorMapping.fallback || {
       primary: '#1e40af',
@@ -158,6 +213,9 @@ export class TemplateBuilder {
     palette.secondary = palette.secondary || fallback.secondary;
     palette.accent = palette.accent || fallback.accent;
 
+    // Get font pairing
+    const fonts = this.getFontPairing(industry);
+
     return `
       :root {
         --color-primary: ${palette.primary};
@@ -167,6 +225,14 @@ export class TemplateBuilder {
         --color-text-light: #6b7280;
         --color-background: #ffffff;
         --color-surface: #f9fafb;
+        --font-heading: ${fonts.heading};
+        --font-body: ${fonts.body};
+      }
+      body {
+        font-family: var(--font-body);
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--font-heading);
       }
     `;
   }
@@ -190,8 +256,8 @@ export class TemplateBuilder {
       }
     });
 
-    // Generate CSS
-    const customCSS = this.generateCSS(siteData.colors || [], config);
+    // Generate CSS with industry-specific fonts
+    const customCSS = this.generateCSS(siteData.colors || [], config, industry);
 
     // Load base CSS
     let baseCSS = '';
@@ -202,8 +268,8 @@ export class TemplateBuilder {
       baseCSS = this.getDefaultCSS();
     }
 
-    // Assemble final HTML
-    const html = this.assembleHTML(siteData, slots, sections, baseCSS, customCSS);
+    // Assemble final HTML with font pairing
+    const html = this.assembleHTML(siteData, slots, sections, baseCSS, customCSS, industry);
 
     return {
       html,
@@ -233,8 +299,8 @@ export class TemplateBuilder {
       }
     });
 
-    // Generate CSS
-    const customCSS = this.generateCSS(siteData.colors || [], config);
+    // Generate CSS with industry-specific fonts
+    const customCSS = this.generateCSS(siteData.colors || [], config, industry);
 
     // Load base CSS
     let baseCSS = '';
@@ -245,15 +311,20 @@ export class TemplateBuilder {
       baseCSS = this.getDefaultCSS();
     }
 
-    return this.assembleHTML(siteData, polishedSlots, sections, baseCSS, customCSS);
+    return this.assembleHTML(siteData, polishedSlots, sections, baseCSS, customCSS, industry);
   }
 
-  assembleHTML(siteData, slots, sections, baseCSS, customCSS) {
+  assembleHTML(siteData, slots, sections, baseCSS, customCSS, industry = 'general') {
     const title = slots.business_name || siteData.businessName || 'Website Preview';
     const description = slots.subheadline || siteData.description || '';
+    const language = siteData.language || 'en';
+
+    // Get the appropriate Google Fonts URL for this industry
+    const fonts = this.getFontPairing(industry);
+    const googleFontsUrl = `https://fonts.googleapis.com/css2?${fonts.googleFonts}&display=swap`;
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${language}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -261,7 +332,7 @@ export class TemplateBuilder {
   <meta name="description" content="${description}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="${googleFontsUrl}" rel="stylesheet">
   <style>
 ${baseCSS}
 ${customCSS}

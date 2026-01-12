@@ -3,8 +3,17 @@ import Anthropic from '@anthropic-ai/sdk';
 import logger from './logger.js';
 import { CONFIG } from './config.js';
 import { safeParseJsonArray } from './utils.js';
+import { captureBeforeAfter } from './screenshot.js';
 
 const log = logger.child('emailGenerator');
+
+// Subject line variants for A/B testing
+const SUBJECT_VARIANTS = [
+  { id: 'A', template: 'Your new {{businessName}} website' },
+  { id: 'B', template: 'I rebuilt {{businessName}} (free preview)' },
+  { id: 'C', template: '{{businessName}} - thought you should see this' },
+  { id: 'D', template: 'Quick question about {{businessName}}' }
+];
 
 export class EmailGenerator {
   constructor(apiKey) {
@@ -184,13 +193,119 @@ No worries if it's not a fit. Door's always open if you change your mind down th
 
     return followUps[attempt] || followUps[1];
   }
+
+  /**
+   * Select a subject line variant for A/B testing
+   * Returns the variant ID and the rendered subject line
+   */
+  selectSubjectVariant(data) {
+    // Random selection for A/B testing
+    const variant = SUBJECT_VARIANTS[Math.floor(Math.random() * SUBJECT_VARIANTS.length)];
+    const subject = variant.template.replace('{{businessName}}', data.businessName);
+
+    log.debug('Selected subject variant', { variantId: variant.id, subject });
+
+    return {
+      variantId: variant.id,
+      subject
+    };
+  }
+
+  /**
+   * Capture before/after screenshots for email
+   */
+  async captureScreenshots(originalUrl, previewUrl) {
+    try {
+      log.info('Capturing before/after screenshots for email');
+      const screenshots = await captureBeforeAfter(originalUrl, previewUrl);
+      return screenshots;
+    } catch (error) {
+      log.warn('Failed to capture screenshots', { error: error.message });
+      return null;
+    }
+  }
 }
 
-export function wrapInHtml(textBody, previewUrl, businessName) {
+/**
+ * Calculate days remaining until expiry
+ */
+export function calculateDaysRemaining(expiryDate) {
+  if (!expiryDate) {
+    return 14; // Default expiry
+  }
+  const now = new Date();
+  const expiry = new Date(expiryDate);
+  const diffMs = expiry - now;
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays);
+}
+
+/**
+ * Get expiry display text and styling
+ */
+function getExpiryDisplay(daysRemaining) {
+  if (daysRemaining <= 2) {
+    return {
+      text: `Preview expires in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`,
+      color: '#dc2626',
+      fontWeight: 'bold'
+    };
+  } else if (daysRemaining <= 5) {
+    return {
+      text: `Preview expires in ${daysRemaining} days`,
+      color: '#f59e0b',
+      fontWeight: '600'
+    };
+  }
+  return {
+    text: `Preview expires in ${daysRemaining} days`,
+    color: '#6b7280',
+    fontWeight: 'normal'
+  };
+}
+
+/**
+ * Wrap email body in HTML with optional screenshots and dynamic expiry
+ */
+export function wrapInHtml(textBody, previewUrl, businessName, options = {}) {
+  const {
+    expiryDate = null,
+    screenshots = null,
+    originalUrl = null
+  } = options;
+
+  const daysRemaining = calculateDaysRemaining(expiryDate);
+  const expiryDisplay = getExpiryDisplay(daysRemaining);
+
   const htmlBody = textBody
     .split('\n\n')
     .map(p => `<p style="margin: 0 0 16px 0; line-height: 1.6;">${p}</p>`)
     .join('');
+
+  // Build screenshot comparison section if available
+  let screenshotSection = '';
+  if (screenshots && screenshots.beforeBase64 && screenshots.afterBase64) {
+    screenshotSection = `
+  <div style="margin: 32px 0; padding: 24px; background: #f8fafc; border-radius: 12px;">
+    <p style="margin: 0 0 16px 0; font-weight: 600; text-align: center; color: #1f2937;">See the transformation:</p>
+    <table style="width: 100%; border-spacing: 0; border-collapse: collapse;">
+      <tr>
+        <td style="width: 48%; text-align: center; vertical-align: top;">
+          <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Before</p>
+          <img src="${screenshots.beforeBase64}" alt="Current website" style="width: 100%; max-width: 260px; border-radius: 8px; border: 1px solid #e5e7eb; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" />
+        </td>
+        <td style="width: 4%; text-align: center; vertical-align: middle;">
+          <span style="font-size: 24px; color: #9ca3af;">→</span>
+        </td>
+        <td style="width: 48%; text-align: center; vertical-align: top;">
+          <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #2563eb; text-transform: uppercase; letter-spacing: 0.05em;">After</p>
+          <img src="${screenshots.afterBase64}" alt="New website preview" style="width: 100%; max-width: 260px; border-radius: 8px; border: 2px solid #2563eb; box-shadow: 0 4px 6px rgba(37,99,235,0.15);" />
+        </td>
+      </tr>
+    </table>
+  </div>
+    `;
+  }
 
   return `
 <!DOCTYPE html>
@@ -200,23 +315,23 @@ export function wrapInHtml(textBody, previewUrl, businessName) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; color: #1f2937; max-width: 600px; margin: 0 auto; padding: 20px;">
-  
+
   ${htmlBody}
-  
-  <div style="margin: 32px 0; padding: 24px; background: #f3f4f6; border-radius: 12px;">
+  ${screenshotSection}
+  <div style="margin: 32px 0; padding: 24px; background: #f3f4f6; border-radius: 12px; text-align: center;">
     <p style="margin: 0 0 16px 0; font-weight: 600;">Your new site preview:</p>
     <a href="${previewUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: 600;">
       View ${businessName} Redesign →
     </a>
-    <p style="margin: 16px 0 0 0; font-size: 14px; color: #6b7280;">
-      Preview expires in 14 days
+    <p style="margin: 16px 0 0 0; font-size: 14px; color: ${expiryDisplay.color}; font-weight: ${expiryDisplay.fontWeight};">
+      ${expiryDisplay.text}
     </p>
   </div>
-  
+
   <p style="color: #6b7280; font-size: 14px; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 32px;">
     Not interested? No worries — just ignore this email and the preview will expire automatically.
   </p>
-  
+
 </body>
 </html>`;
 }
