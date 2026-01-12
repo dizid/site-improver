@@ -1,4 +1,4 @@
-<!-- Services: Soft shadow cards with friendly icons -->
+<!-- Services: Soft shadow cards with professional SVG icons -->
 <section id="services" class="services-section">
   <div class="container">
     <h2>{{section_services}}</h2>
@@ -8,7 +8,7 @@
     <div class="services-grid">
       {{#each services}}
         <div class="service-card">
-          <span class="service-icon">{{#if this.icon}}{{this.icon}}{{else}}✨{{/if}}</span>
+          <div class="service-icon">{{{this.icon}}}</div>
           <h3>{{#if this.name}}{{this.name}}{{else}}{{this}}{{/if}}</h3>
           {{#if this.description}}
           <p>{{this.description}}</p>

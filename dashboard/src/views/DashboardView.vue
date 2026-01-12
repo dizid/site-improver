@@ -843,21 +843,23 @@ async function handleNewLead() {
       skipEmail: skipEmail.value
     });
 
-    // Store site ID for polling
+    // Store job ID for SSE subscription
+    if (response && response.jobId) {
+      pipelineProgress.value.jobId = response.jobId;
+      // Subscribe to real-time status updates via SSE
+      subscribeToSSE(response.jobId);
+    } else {
+      // Fallback to polling if no jobId (backwards compatibility)
+      startProgressPolling();
+    }
+
+    // Store site ID if available
     if (response && response.siteId) {
       pipelineProgress.value.siteId = response.siteId;
     }
 
-    // Check if we got a slug-based preview URL
-    if (response && response.slug) {
-      pipelineProgress.value.previewUrl = `/preview/${response.slug}`;
-    }
-
     newLeadUrl.value = '';
     showToast('Pipeline started! Processing your lead...', 'success');
-
-    // Start polling for status updates
-    startProgressPolling();
 
   } catch (err) {
     pipelineProgress.value.error = err.message;
@@ -878,7 +880,11 @@ function startProgress(url) {
     elapsed: 0,
     error: null,
     previewUrl: null,
-    siteId: null
+    siteId: null,
+    jobId: null,
+    eventSource: null,
+    stage: 'queued',
+    label: 'Starting pipeline...'
   };
 
   // Start elapsed time counter
@@ -963,6 +969,70 @@ function stopProgress() {
     clearInterval(progressPollInterval);
     progressPollInterval = null;
   }
+  // Close SSE connection if active
+  if (pipelineProgress.value.eventSource) {
+    pipelineProgress.value.eventSource.close();
+    pipelineProgress.value.eventSource = null;
+  }
+}
+
+// Subscribe to real-time pipeline status via Server-Sent Events
+function subscribeToSSE(jobId) {
+  console.log('[SSE] Subscribing to pipeline status:', jobId);
+
+  const eventSource = new EventSource(`/api/pipeline/${jobId}/status`);
+  pipelineProgress.value.eventSource = eventSource;
+
+  eventSource.onmessage = (event) => {
+    try {
+      const status = JSON.parse(event.data);
+      console.log('[SSE] Status update:', status);
+
+      // Update progress based on SSE status
+      pipelineProgress.value.stage = status.stage;
+      pipelineProgress.value.label = status.label;
+      pipelineProgress.value.percent = status.progress;
+
+      // Map stage to stageIndex for UI
+      const stageMap = {
+        'queued': 0, 'scraping': 0, 'scrape_fallback': 0,
+        'analyzing': 1, 'generating': 1,
+        'building': 2, 'deploying': 2,
+        'complete': 3, 'error': -1
+      };
+      pipelineProgress.value.stageIndex = stageMap[status.stage] ?? 0;
+
+      // Handle completion
+      if (status.stage === 'complete') {
+        pipelineProgress.value.percent = 100;
+        pipelineProgress.value.stageIndex = 3;
+        if (status.preview) {
+          pipelineProgress.value.previewUrl = status.preview;
+        }
+        showToast(`Site deployed! ${status.businessName || 'Preview ready'}`, 'success');
+        stopProgress();
+        fetchData(); // Refresh leads list
+      }
+
+      // Handle error
+      if (status.stage === 'error') {
+        pipelineProgress.value.error = status.error?.message || 'Pipeline failed';
+        showToast(pipelineProgress.value.error, 'error');
+        stopProgress();
+      }
+    } catch (e) {
+      console.error('[SSE] Failed to parse status:', e);
+    }
+  };
+
+  eventSource.onerror = (err) => {
+    console.error('[SSE] Connection error:', err);
+    // Don't immediately show error - SSE may reconnect
+    // Fall back to polling after SSE fails
+    eventSource.close();
+    pipelineProgress.value.eventSource = null;
+    startProgressPolling();
+  };
 }
 
 async function handleDiscover() {

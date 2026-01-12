@@ -3,12 +3,14 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import * as db from './db.js';
 import { OutreachManager } from './outreach.js';
 import NetlifyDeployer from './netlifyDeploy.js';
 import logger from './logger.js';
 import { CONFIG, validateStartup } from './config.js';
 import { validateUrl, validateEmail } from './utils.js';
+import { pipelineEvents, PIPELINE_STAGES } from './pipelineEvents.js';
 
 const log = logger.child('server');
 
@@ -795,12 +797,72 @@ export function createServer(config = {}) {
     });
   }));
 
-  // Run pipeline for a URL (async)
+  // ==================== PIPELINE SSE STATUS ====================
+
+  // SSE endpoint for real-time pipeline status updates
+  app.get('/api/pipeline/:jobId/status', (req, res) => {
+    const { jobId } = req.params;
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+    // Send initial status if job exists
+    const currentStatus = pipelineEvents.getStatus(jobId);
+    if (currentStatus) {
+      res.write(`data: ${JSON.stringify(currentStatus)}\n\n`);
+    } else {
+      // Job not found yet, send waiting status
+      res.write(`data: ${JSON.stringify({ jobId, stage: 'waiting', progress: 0, label: 'Waiting for pipeline...' })}\n\n`);
+    }
+
+    // Handler for status updates
+    const sendStatus = (status) => {
+      try {
+        res.write(`data: ${JSON.stringify(status)}\n\n`);
+
+        // Close connection on completion or error
+        if (status.stage === 'complete' || status.stage === 'error') {
+          setTimeout(() => res.end(), 1000); // Give client time to receive final message
+        }
+      } catch (err) {
+        log.debug('SSE write failed, client disconnected', { jobId });
+      }
+    };
+
+    // Subscribe to job status events
+    pipelineEvents.on(`status:${jobId}`, sendStatus);
+
+    // Cleanup on disconnect
+    req.on('close', () => {
+      pipelineEvents.off(`status:${jobId}`, sendStatus);
+      log.debug('SSE client disconnected', { jobId });
+    });
+
+    // Keep-alive ping every 30 seconds
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(': keepalive\n\n');
+      } catch (err) {
+        clearInterval(keepAlive);
+      }
+    }, 30000);
+
+    req.on('close', () => clearInterval(keepAlive));
+  });
+
+  // Run pipeline for a URL (async with real-time status)
   app.post('/api/pipeline', async (req, res) => {
     try {
       const { url, skipPolish, skipEmail } = req.body;
 
+      // Generate unique job ID for tracking
+      const jobId = randomUUID();
+
       log.info('=== PIPELINE REQUEST RECEIVED ===');
+      log.info(`JobId: ${jobId}`);
       log.info(`URL: ${url}`);
       log.info(`skipPolish: ${skipPolish}, skipEmail: ${skipEmail}`);
 
@@ -813,22 +875,38 @@ export function createServer(config = {}) {
 
       const validatedUrl = urlResult.normalized;
 
-      // Return immediately, process in background
-      log.info('Returning response to client, starting background pipeline...');
-      res.json({ message: 'Pipeline started', url: validatedUrl, status: 'processing' });
+      // Create job tracker for status updates
+      const tracker = pipelineEvents.createJobTracker(jobId);
+      tracker.queued({ url: validatedUrl });
+
+      // Return immediately with jobId for SSE subscription
+      log.info('Returning response to client with jobId for SSE tracking...');
+      res.json({
+        message: 'Pipeline started',
+        url: validatedUrl,
+        jobId, // Client can use this to subscribe to /api/pipeline/:jobId/status
+        status: 'processing'
+      });
 
       // Run pipeline in background
       log.info('Importing pipeline module...');
       const { rebuildAndDeploy } = await import('./pipeline.js');
 
-      log.info('Starting rebuildAndDeploy...');
-      rebuildAndDeploy(validatedUrl, { skipPolish })
+      log.info('Starting rebuildAndDeploy with job tracker...');
+      rebuildAndDeploy(validatedUrl, { skipPolish, jobId, tracker })
         .then(async result => {
           log.info('=== PIPELINE COMPLETE ===');
           log.info(`Business: ${result.siteData?.businessName}`);
           log.info(`Industry: ${result.industry}`);
           log.info(`Preview: ${result.preview}`);
           log.info(`Duration: ${result.duration}s`);
+
+          // Emit completion status
+          tracker.complete({
+            preview: result.preview,
+            businessName: result.siteData?.businessName,
+            industry: result.industry
+          });
 
           // Update lead status to deployed if lead exists
           try {
@@ -864,6 +942,9 @@ export function createServer(config = {}) {
           log.error(`URL: ${validatedUrl}`);
           log.error(`Error: ${error.message}`);
           log.error(`Stack: ${error.stack}`);
+
+          // Emit error status
+          tracker.error(error, error.step || 'unknown');
 
           // Log error to database
           try {

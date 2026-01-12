@@ -263,8 +263,15 @@ img {
   border: 1px solid rgba(37, 99, 235, 0.1);
 }
 
+/* Hero badge SVG icon */
 .hero-badge .badge-icon {
-  font-size: 1rem;
+  width: 16px;
+  height: 16px;
+  color: var(--color-accent);
+}
+
+.hero-badge svg.badge-icon {
+  flex-shrink: 0;
 }
 
 .hero-content h1 {
@@ -292,10 +299,15 @@ img {
   margin-bottom: var(--space-md);
 }
 
-/* Button arrow animation */
+/* Button SVG icons */
 .btn-arrow {
-  display: inline-block;
+  display: inline-flex;
   transition: transform var(--transition-base);
+}
+
+.btn-arrow svg {
+  width: 18px;
+  height: 18px;
 }
 
 .btn-primary:hover .btn-arrow {
@@ -303,7 +315,13 @@ img {
 }
 
 .btn-icon {
+  display: inline-flex;
   margin-right: 0.25rem;
+}
+
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* Trust indicators below buttons */
@@ -314,10 +332,16 @@ img {
   margin-top: var(--space-sm);
 }
 
+/* Trust stars - SVG version */
 .trust-stars {
+  display: inline-flex;
+  gap: 2px;
   color: #f59e0b;
-  font-size: 1rem;
-  letter-spacing: -0.1em;
+}
+
+.trust-stars svg {
+  width: 16px;
+  height: 16px;
 }
 
 .trust-text {
@@ -366,9 +390,16 @@ img {
   box-shadow: var(--shadow-hover);
 }
 
+/* Hero placeholder SVG icon */
 .hero-image-placeholder .placeholder-icon {
-  font-size: 5rem;
+  width: 80px;
+  height: 80px;
+  color: white;
   opacity: 0.5;
+}
+
+.hero-image-placeholder svg.placeholder-icon {
+  stroke-width: 1;
 }
 
 /* -----------------------------------------------------------------------------
@@ -506,16 +537,30 @@ img {
   transform: scaleX(1);
 }
 
+/* Service icon container for SVG icons */
 .service-icon {
-  font-size: 2.5rem;
   margin-bottom: var(--space-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 60px;
   height: 60px;
-  background: var(--color-surface);
+  background: linear-gradient(135deg, var(--color-surface) 0%, rgba(37, 99, 235, 0.08) 100%);
   border-radius: var(--radius-lg);
+  color: var(--color-primary);
+  transition: all var(--transition-base);
+}
+
+.service-icon svg {
+  width: 28px;
+  height: 28px;
+  stroke-width: 1.75;
+}
+
+.service-card:hover .service-icon {
+  background: var(--color-primary);
+  color: white;
+  transform: scale(1.1);
 }
 
 .service-card h3 {
@@ -559,6 +604,33 @@ img {
   box-shadow: var(--shadow-soft);
 }
 
+/* Why Us SVG icon styling */
+.why-us-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: var(--space-md);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  border-radius: var(--radius-xl);
+  color: white;
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.2);
+  transition: all var(--transition-base);
+}
+
+.why-us-icon svg {
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.75;
+}
+
+.why-us-item:hover .why-us-icon {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.3);
+}
+
+/* Legacy fallback for items without SVG */
 .why-us-item .icon {
   font-size: 3.5rem;
   margin-bottom: var(--space-sm);
@@ -718,6 +790,25 @@ img {
   font-size: 1rem;
 }
 
+/* Contact SVG icon styling */
+.contact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+  color: white;
+  flex-shrink: 0;
+}
+
+.contact-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Legacy fallback */
 .contact-info .icon {
   font-size: 1.25rem;
   flex-shrink: 0;

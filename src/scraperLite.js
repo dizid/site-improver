@@ -1,5 +1,5 @@
 // src/scraperLite.js
-// Serverless scraper using Firecrawl API
+// Serverless scraper using Firecrawl API with browser fallback
 
 import * as cheerio from 'cheerio';
 import logger from './logger.js';
@@ -7,13 +7,64 @@ import { CONFIG } from './config.js';
 
 const log = logger.child('scraper-firecrawl');
 
+/**
+ * Main scrape function with automatic fallback
+ * 1. Try Firecrawl API first (fast, serverless)
+ * 2. Fall back to browser-based scraping if Firecrawl fails
+ * 3. Return clear error if both fail
+ */
 export async function scrapeSiteLite(url) {
   const apiKey = process.env.FIRECRAWL_API_KEY;
 
-  if (!apiKey) {
-    throw new Error('FIRECRAWL_API_KEY not set');
+  // Try Firecrawl first if API key is available
+  if (apiKey) {
+    try {
+      log.info('Attempting Firecrawl scrape...', { url });
+      const result = await scrapeWithFirecrawl(url, apiKey);
+      result.scraperMethod = 'firecrawl';
+      return result;
+    } catch (firecrawlError) {
+      log.warn('Firecrawl failed, falling back to browser scraper', {
+        url,
+        error: firecrawlError.message
+      });
+    }
+  } else {
+    log.info('No Firecrawl API key, using browser scraper', { url });
   }
 
+  // Fallback to browser-based scraping
+  try {
+    log.info('Attempting browser-based scrape...', { url });
+    const { scrapeSite: scrapeSiteBrowser } = await import('./scraper.js');
+    const result = await scrapeSiteBrowser(url);
+    result.scraperMethod = 'browser';
+    return result;
+  } catch (browserError) {
+    log.error('Browser scraper also failed', {
+      url,
+      error: browserError.message
+    });
+
+    // Create helpful error message
+    const errorMsg = apiKey
+      ? `Site could not be scraped. Firecrawl and browser scraping both failed. The site may be blocking automated access or have technical issues.`
+      : `Site could not be scraped. Browser scraping failed. Try adding a FIRECRAWL_API_KEY for better results.`;
+
+    const error = new Error(errorMsg);
+    error.code = 'SCRAPE_FAILED';
+    error.details = {
+      firecrawlError: apiKey ? 'Failed' : 'No API key',
+      browserError: browserError.message
+    };
+    throw error;
+  }
+}
+
+/**
+ * Firecrawl API scraper (separated for clarity)
+ */
+async function scrapeWithFirecrawl(url, apiKey) {
   try {
     log.debug('Starting Firecrawl scrape', { url });
 

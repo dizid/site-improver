@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import logger from './logger.js';
+import { ICONS, getIcon, detectIcon } from '../templates/base/icons.js';
 
 const log = logger.child('templateBuilder');
 
@@ -494,18 +495,58 @@ export class TemplateBuilder {
     };
   }
 
+  /**
+   * Resolve icon names to actual SVG HTML in slots
+   */
+  resolveIcons(slots) {
+    const resolved = { ...slots };
+
+    // Process services array - resolve icon names to SVG
+    if (Array.isArray(resolved.services)) {
+      resolved.services = resolved.services.map(service => {
+        if (typeof service === 'object') {
+          const iconName = service.icon || detectIcon(service.name);
+          return {
+            ...service,
+            icon: getIcon(iconName) // Replace icon name with actual SVG
+          };
+        }
+        return {
+          name: service,
+          icon: getIcon(detectIcon(service))
+        };
+      });
+    }
+
+    // Process why_us_points array
+    if (Array.isArray(resolved.why_us_points)) {
+      resolved.why_us_points = resolved.why_us_points.map(point => {
+        const iconName = point.icon || detectIcon(point.title);
+        return {
+          ...point,
+          icon: getIcon(iconName)
+        };
+      });
+    }
+
+    return resolved;
+  }
+
   async buildWithSlots(siteData, polishedSlots) {
     await this.init();
 
     const industry = siteData.industry || this.detectIndustry(siteData);
     const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
 
-    // Build HTML from sections with polished slots
+    // Resolve icon names to actual SVG HTML
+    const slotsWithIcons = this.resolveIcons(polishedSlots);
+
+    // Build HTML from sections with resolved icons
     const sections = (config.sections || []).map(section => {
       const component = this.components[section];
       if (!component) return '';
       try {
-        return component({ ...siteData, ...polishedSlots });
+        return component({ ...siteData, ...slotsWithIcons });
       } catch (error) {
         log.debug(`Failed to render section ${section}`, { error: error.message });
         return '';
