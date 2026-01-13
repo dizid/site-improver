@@ -1,14 +1,14 @@
 <!-- Why Us: Professional feature cards with SVG icons -->
-<section id="about" class="why-us-section">
+<section id="about" class="why-us-section" aria-labelledby="why-us-heading">
   <div class="container">
-    <h2>{{section_why_us}}</h2>
+    <h2 id="why-us-heading">{{section_why_us}}</h2>
 
     <!-- Feature cards with professional icons -->
     <div class="why-us-grid">
       {{#if why_us_points}}
         {{#each why_us_points}}
         <div class="why-us-item">
-          <div class="why-us-icon">{{{this.icon}}}</div>
+          <div class="why-us-icon" aria-hidden="true">{{{this.icon}}}</div>
           <h3>{{this.title}}</h3>
           <p>{{this.description}}</p>
         </div>

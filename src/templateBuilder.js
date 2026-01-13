@@ -590,6 +590,9 @@ export class TemplateBuilder {
     // Add variant class to body for additional styling hooks
     const variantClass = `variant-${variant.name.toLowerCase()}`;
 
+    // Generate JSON-LD structured data
+    const jsonLd = this.generateStructuredData(siteData, slots);
+
     return `<!DOCTYPE html>
 <html lang="${language}">
 <head>
@@ -605,11 +608,204 @@ ${baseCSS}
 ${customCSS}
 ${variantCSS}
   </style>
+  ${jsonLd}
 </head>
 <body class="${variantClass}">
+<main id="main-content">
 ${sections.join('\n').replace('<section class="hero"', `<section class="hero" ${heroStyle}`)}
+</main>
+${this.getMobileMenuScript()}
+${this.getScrollAnimationScript()}
 </body>
 </html>`;
+  }
+
+  /**
+   * Generate Schema.org LocalBusiness structured data
+   */
+  generateStructuredData(siteData, slots) {
+    const businessName = slots.business_name || siteData.businessName || '';
+    const description = slots.subheadline || siteData.description || '';
+    const phone = siteData.phone || slots.phone || '';
+    const email = siteData.email || slots.email || '';
+    const address = siteData.address || slots.address || '';
+    const hours = siteData.hours || slots.hours || '';
+    const heroImage = siteData.images?.[0]?.src || '';
+    const url = siteData.originalUrl || '';
+
+    // Build services array for JSON-LD (filter nullish values first)
+    const services = (slots.services || siteData.services || [])
+      .filter(s => s != null)
+      .map(s => typeof s === 'string' ? s : s.name)
+      .filter(Boolean);
+
+    const schema = {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      "name": businessName,
+      "description": description
+    };
+
+    if (url) schema.url = url;
+    if (phone) schema.telephone = phone;
+    if (email) schema.email = email;
+    if (heroImage) schema.image = heroImage;
+    if (address) {
+      schema.address = {
+        "@type": "PostalAddress",
+        "streetAddress": address
+      };
+    }
+    if (hours) {
+      schema.openingHours = hours;
+    }
+    if (services.length > 0) {
+      schema.makesOffer = services.map(service => ({
+        "@type": "Offer",
+        "itemOffered": {
+          "@type": "Service",
+          "name": service
+        }
+      }));
+    }
+
+    // Add aggregate rating if available
+    if (siteData.rating || slots.rating) {
+      schema.aggregateRating = {
+        "@type": "AggregateRating",
+        "ratingValue": siteData.rating || slots.rating,
+        "reviewCount": siteData.review_count || slots.review_count || "50"
+      };
+    }
+
+    // Escape </script> sequences to prevent XSS attacks
+    // Replace </ with <\/ which is valid JSON and prevents script tag injection
+    const safeJson = JSON.stringify(schema, null, 2)
+      .replace(/<\//g, '<\\/');
+
+    return `<script type="application/ld+json">
+${safeJson}
+</script>`;
+  }
+
+  /**
+   * Generate mobile menu JavaScript
+   */
+  getMobileMenuScript() {
+    return `<script>
+(function() {
+  // Mobile menu toggle
+  const menuBtn = document.querySelector('.mobile-menu-btn');
+  const mobileNav = document.querySelector('.mobile-nav');
+  const closeBtn = document.querySelector('.mobile-nav-close');
+
+  if (menuBtn && mobileNav) {
+    menuBtn.addEventListener('click', function() {
+      mobileNav.classList.add('active');
+      mobileNav.setAttribute('aria-hidden', 'false');
+      menuBtn.setAttribute('aria-expanded', 'true');
+      document.body.style.overflow = 'hidden';
+    });
+
+    function closeMenu() {
+      mobileNav.classList.remove('active');
+      mobileNav.setAttribute('aria-hidden', 'true');
+      menuBtn.setAttribute('aria-expanded', 'false');
+      document.body.style.overflow = '';
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeMenu);
+    }
+
+    // Close on backdrop click
+    mobileNav.addEventListener('click', function(e) {
+      if (e.target === mobileNav) {
+        closeMenu();
+      }
+    });
+
+    // Close on escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && mobileNav.classList.contains('active')) {
+        closeMenu();
+      }
+    });
+
+    // Close on nav link click
+    mobileNav.querySelectorAll('a').forEach(function(link) {
+      link.addEventListener('click', closeMenu);
+    });
+  }
+
+  // Smooth scroll for anchor links
+  document.querySelectorAll('a[href^="#"]').forEach(function(anchor) {
+    anchor.addEventListener('click', function(e) {
+      const targetId = this.getAttribute('href');
+      if (targetId === '#') return;
+
+      const target = document.querySelector(targetId);
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+})();
+</script>`;
+  }
+
+  /**
+   * Generate scroll animation JavaScript
+   */
+  getScrollAnimationScript() {
+    return `<script>
+(function() {
+  // Check for reduced motion preference
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersReducedMotion) return;
+
+  // Add fade-in-up class to animatable elements
+  const animatableSelectors = [
+    '.service-card',
+    '.why-us-item',
+    '.testimonial',
+    '.contact-info',
+    '.contact-form'
+  ];
+
+  animatableSelectors.forEach(function(selector) {
+    document.querySelectorAll(selector).forEach(function(el) {
+      el.classList.add('fade-in-up');
+    });
+  });
+
+  // Intersection Observer for scroll animations
+  const observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+  });
+
+  document.querySelectorAll('.fade-in-up').forEach(function(el) {
+    observer.observe(el);
+  });
+
+  // Add pulse effect to primary CTA after delay
+  setTimeout(function() {
+    const heroCta = document.querySelector('.hero .btn-primary');
+    if (heroCta) {
+      heroCta.classList.add('pulse');
+    }
+  }, 3000);
+})();
+</script>`;
   }
 
   getDefaultCSS() {
@@ -901,14 +1097,20 @@ body {
   color: white;
 }
 
-/* Mobile */
-@media (max-width: 768px) {
-  .hero h1 { font-size: 2rem; }
-  .hero .container { grid-template-columns: 1fr; }
-  .hero-image { order: -1; }
-  .main-nav { display: none; }
-  .contact-grid { grid-template-columns: 1fr; }
-  .site-footer .container { flex-direction: column; gap: 1rem; text-align: center; }
+/* Mobile-first: base styles are mobile, larger screens scale up */
+.hero .container { grid-template-columns: 1fr; }
+.hero-image { order: -1; }
+.main-nav { display: none; }
+.contact-grid { grid-template-columns: 1fr; }
+.site-footer .container { flex-direction: column; gap: 1rem; text-align: center; }
+
+@media (min-width: 768px) {
+  .hero h1 { font-size: 3rem; }
+  .hero .container { grid-template-columns: 1fr 1fr; }
+  .hero-image { order: initial; }
+  .main-nav { display: flex; }
+  .contact-grid { grid-template-columns: 1fr 1fr; }
+  .site-footer .container { flex-direction: row; text-align: left; }
 }
     `;
   }

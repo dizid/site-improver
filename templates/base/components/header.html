@@ -1,17 +1,20 @@
+<!-- Skip link for accessibility -->
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
 <!-- Header: Rounded navbar with pill-shaped CTA -->
-<header class="site-header">
+<header class="site-header" role="banner">
   <div class="container">
     <!-- Logo with optional image -->
-    <a href="/" class="logo">
+    <a href="/" class="logo" aria-label="{{businessName}} - Home">
       {{#if logo}}
-        <img src="{{logo}}" alt="{{businessName}}">
+        <img src="{{logo}}" alt="{{businessName}} logo">
       {{else}}
         <span class="logo-text">{{businessName}}</span>
       {{/if}}
     </a>
 
     <!-- Main navigation with rounded hover states -->
-    <nav class="main-nav">
+    <nav class="main-nav" role="navigation" aria-label="Main navigation">
       <a href="#services">{{nav_services}}</a>
       <a href="#about">{{nav_about}}</a>
       <a href="#testimonials">{{nav_reviews}}</a>
@@ -20,13 +23,46 @@
 
     <!-- Pill-shaped phone CTA -->
     {{#if phone}}
-    <a href="tel:{{phone}}" class="header-cta">
-      {{btn_call}}: {{phone}}
+    <a href="tel:{{phone}}" class="header-cta" aria-label="Call us at {{phone}}">
+      <span class="btn-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      </span>
+      {{btn_call}}
     </a>
     {{else}}
     <a href="#contact" class="header-cta">
       {{section_contact}}
     </a>
     {{/if}}
+
+    <!-- Mobile menu button -->
+    <button class="mobile-menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
   </div>
 </header>
+
+<!-- Mobile navigation overlay -->
+<div id="mobile-nav" class="mobile-nav" role="dialog" aria-label="Mobile navigation menu" aria-hidden="true">
+  <div class="mobile-nav-content">
+    <button class="mobile-nav-close" aria-label="Close menu">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <nav class="mobile-nav-links" role="navigation" aria-label="Mobile navigation">
+      <a href="#services">{{nav_services}}</a>
+      <a href="#about">{{nav_about}}</a>
+      <a href="#testimonials">{{nav_reviews}}</a>
+      <a href="#contact">{{nav_contact}}</a>
+      {{#if phone}}
+      <a href="tel:{{phone}}" class="btn-primary">{{btn_call}}: {{phone}}</a>
+      {{/if}}
+    </nav>
+  </div>
+</div>

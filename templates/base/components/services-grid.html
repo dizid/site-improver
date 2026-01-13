@@ -1,14 +1,14 @@
 <!-- Services: Soft shadow cards with professional SVG icons -->
-<section id="services" class="services-section">
+<section id="services" class="services-section" aria-labelledby="services-heading">
   <div class="container">
-    <h2>{{section_services}}</h2>
+    <h2 id="services-heading">{{section_services}}</h2>
     <p class="section-subtitle">{{services_subtitle}}</p>
 
     <!-- Service cards with soft shadows -->
     <div class="services-grid">
       {{#each services}}
         <div class="service-card">
-          <div class="service-icon">{{{this.icon}}}</div>
+          <div class="service-icon" aria-hidden="true">{{{this.icon}}}</div>
           <h3>{{#if this.name}}{{this.name}}{{else}}{{this}}{{/if}}</h3>
           {{#if this.description}}
           <p>{{this.description}}</p>
