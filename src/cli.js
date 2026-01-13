@@ -179,24 +179,15 @@ program
     console.log('✅ Sequence complete');
   });
 
-// Cleanup command
+// Cleanup command - removes expired previews from database
 program
   .command('cleanup')
-  .description('Delete old Netlify preview sites')
-  .option('-d, --days <days>', 'Max age in days', '30')
-  .action(async (options) => {
-    if (!process.env.NETLIFY_AUTH_TOKEN) {
-      console.error('❌ NETLIFY_AUTH_TOKEN not set');
-      process.exit(1);
-    }
-    
-    const { default: NetlifyDeployer } = await import('./netlifyDeploy.js');
-    
-    const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
-    const deleted = await deployer.cleanupOldSites(parseInt(options.days));
-    
-    console.log(`🗑️  Deleted ${deleted.length} old sites:`);
-    deleted.forEach(name => console.log(`   - ${name}`));
+  .description('Delete expired previews from database')
+  .action(async () => {
+    const { cleanupExpiredPreviews } = await import('./db.js');
+
+    const deleted = await cleanupExpiredPreviews();
+    console.log(`🗑️  Deleted ${deleted} expired previews`);
   });
 
 // List deployments command

@@ -55,7 +55,7 @@
     <!-- Hero image with decorative frame -->
     <div class="hero-image">
       {{#if hero_image}}
-        <img src="{{hero_image}}" alt="{{businessName}} - Professional Services" loading="eager">
+        <img src="{{hero_image}}" alt="{{businessName}} - Professional Services" loading="eager" fetchpriority="high" width="600" height="400" decoding="async">
       {{else}}
         <!-- Placeholder gradient when no image -->
         <div class="hero-image-placeholder" aria-hidden="true">

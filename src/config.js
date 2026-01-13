@@ -157,7 +157,7 @@ export function getFeatures() {
   const env = getEnvConfig();
   return {
     aiPolish: !!env.anthropicApiKey,
-    deploy: !!env.netlifyToken,
+    deploy: true, // Always available - uses database storage, no external service needed
     email: !!(env.resendApiKey && env.fromEmail),
     leadFinder: !!env.outscraperApiKey,
     googlePlaces: !!env.googlePlacesApiKey,
@@ -211,9 +211,6 @@ export function validateStartup(logger) {
   // Warn about missing optional features
   if (!features.aiPolish) {
     warnings.push('AI polish disabled - ANTHROPIC_API_KEY not set');
-  }
-  if (!features.deploy) {
-    warnings.push('Netlify deploy disabled - NETLIFY_AUTH_TOKEN not set');
   }
   if (!features.email) {
     warnings.push('Email outreach disabled - RESEND_API_KEY or FROM_EMAIL not set');

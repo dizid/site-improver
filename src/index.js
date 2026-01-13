@@ -4,7 +4,6 @@
 export { scrapeSite } from './scraper.js';
 export { default as TemplateBuilder } from './templateBuilder.js';
 export { default as AIPolisher } from './aiPolish.js';
-export { default as NetlifyDeployer } from './netlifyDeploy.js';
 export { default as EmailGenerator, wrapInHtml } from './emailGenerator.js';
 export { default as EmailSender } from './emailSender.js';
 export { default as OutreachManager, runDailySequence } from './outreach.js';

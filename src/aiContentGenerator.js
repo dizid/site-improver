@@ -6,6 +6,9 @@ import logger from './logger.js';
 import { CONFIG } from './config.js';
 import { extractCity, safeParseJsonObject } from './utils.js';
 import { getIndustryContent } from './industryContent.js';
+import { validateContent, validateHeadline, getRegenerationPrompt, checkEmotionalResonance, scoreCTAEffectiveness } from './contentValidator.js';
+import { generateHeadlineOptions, validateAgainstFormulas } from './headlineFormulas.js';
+import { getToneProfile, generateToneGuidance } from './toneProfiles.js';
 
 const log = logger.child('aiContentGenerator');
 
@@ -32,8 +35,9 @@ export class AIContentGenerator {
 
   /**
    * Generate complete website content from scraped site data
+   * Includes validation and retry logic for cliché detection
    */
-  async generateAllContent(siteData, industry) {
+  async generateAllContent(siteData, industry, maxRetries = 2) {
     const startTime = Date.now();
     log.info('Generating all content with AI', {
       business: siteData.businessName,
@@ -46,64 +50,216 @@ export class AIContentGenerator {
     // Get industry-specific content hints
     const industryContent = getIndustryContent(industry);
 
-    // Build the comprehensive prompt
-    const prompt = this.buildComprehensivePrompt(context, industryContent);
+    // Validation context for content checks
+    const validationContext = {
+      businessName: siteData.businessName,
+      city: context.city,
+      trustSignals: siteData.trustSignals
+    };
 
-    try {
-      const response = await this.getClient().messages.create({
-        model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        system: this.getSystemPrompt(context.language),
-        messages: [{ role: 'user', content: prompt }]
-      });
+    let attempt = 0;
+    let rejectionFeedback = null;
 
-      const responseText = response.content[0].text.trim();
+    while (attempt <= maxRetries) {
+      attempt++;
 
-      // Parse JSON response
-      const generated = this.parseResponse(responseText);
+      // Build the comprehensive prompt (with rejection feedback if retrying)
+      const prompt = this.buildComprehensivePrompt(context, industryContent, rejectionFeedback);
 
-      // Merge with real contact info (never fake these)
-      const result = {
-        ...generated,
-        // Keep real business info
-        businessName: siteData.businessName || generated.businessName,
-        phone: siteData.phone,
-        email: siteData.email,
-        address: siteData.address,
-        hours: siteData.hours,
-        // Add metadata
-        generatedAt: new Date().toISOString(),
-        generationTime: Date.now() - startTime
-      };
+      try {
+        const response = await this.getClient().messages.create({
+          model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
+          max_tokens: 2000,
+          system: this.getSystemPrompt(context.language, industry),
+          messages: [{ role: 'user', content: prompt }]
+        });
 
-      log.info('Content generation complete', {
-        business: result.businessName,
-        duration: `${result.generationTime}ms`
-      });
+        const responseText = response.content[0].text.trim();
 
-      return result;
+        // Parse JSON response
+        const generated = this.parseResponse(responseText);
 
-    } catch (error) {
-      log.error('AI content generation failed', { error: error.message });
-      // Return fallback content
-      return this.getFallbackContent(siteData, industry);
+        // Validate content for clichés
+        const validationResult = this.validateGeneratedContent(generated, validationContext);
+
+        if (validationResult.isValid) {
+          // Content passed validation
+          const result = {
+            ...generated,
+            // Keep real business info
+            businessName: siteData.businessName || generated.businessName,
+            phone: siteData.phone,
+            email: siteData.email,
+            address: siteData.address,
+            hours: siteData.hours,
+            // Add metadata
+            generatedAt: new Date().toISOString(),
+            generationTime: Date.now() - startTime,
+            validationScore: validationResult.score,
+            attempts: attempt
+          };
+
+          log.info('Content generation complete', {
+            business: result.businessName,
+            duration: `${result.generationTime}ms`,
+            attempts: attempt,
+            score: validationResult.score
+          });
+
+          return result;
+
+        } else if (attempt <= maxRetries) {
+          // Content has clichés - prepare rejection feedback for retry
+          rejectionFeedback = getRegenerationPrompt(validationResult);
+          log.warn('Content rejected for clichés, retrying', {
+            attempt,
+            issues: validationResult.issues.length,
+            cliches: validationResult.issues.filter(i => i.type === 'cliche').map(i => i.text)
+          });
+        } else {
+          // Final attempt also failed - log warning but use content
+          log.warn('Content still has clichés after retries, using anyway', {
+            issues: validationResult.issues.length,
+            score: validationResult.score
+          });
+
+          return {
+            ...generated,
+            businessName: siteData.businessName || generated.businessName,
+            phone: siteData.phone,
+            email: siteData.email,
+            address: siteData.address,
+            hours: siteData.hours,
+            generatedAt: new Date().toISOString(),
+            generationTime: Date.now() - startTime,
+            validationScore: validationResult.score,
+            attempts: attempt,
+            hasUnresolvedIssues: true,
+            validationIssues: validationResult.issues
+          };
+        }
+
+      } catch (error) {
+        log.error('AI content generation failed', { error: error.message, attempt });
+        if (attempt > maxRetries) {
+          // Return fallback content
+          return this.getFallbackContent(siteData, industry);
+        }
+      }
     }
+
+    // Shouldn't reach here, but return fallback just in case
+    return this.getFallbackContent(siteData, industry);
   }
 
-  getSystemPrompt(language = 'en') {
+  /**
+   * Validate generated content for clichés and quality
+   */
+  validateGeneratedContent(generated, context) {
+    const allIssues = [];
+    let totalScore = 100;
+
+    // Validate headline
+    if (generated.headline) {
+      const headlineResult = validateHeadline(generated.headline, context);
+      allIssues.push(...headlineResult.issues);
+      if (!headlineResult.isValid) {
+        totalScore -= 20;
+      }
+    }
+
+    // Validate subheadline
+    if (generated.subheadline) {
+      const subResult = validateContent(generated.subheadline, context);
+      allIssues.push(...subResult.issues);
+      if (!subResult.isValid) {
+        totalScore -= 15;
+      }
+    }
+
+    // Validate about snippet
+    if (generated.aboutSnippet) {
+      const aboutResult = validateContent(generated.aboutSnippet, context);
+      allIssues.push(...aboutResult.issues);
+      if (!aboutResult.isValid) {
+        totalScore -= 15;
+      }
+    }
+
+    // Check service descriptions
+    if (generated.services && Array.isArray(generated.services)) {
+      for (const service of generated.services) {
+        if (service.description) {
+          const serviceResult = validateContent(service.description, context);
+          // Only add high-severity issues from services
+          const criticalIssues = serviceResult.issues.filter(i => i.severity === 'high' || i.severity === 'critical');
+          allIssues.push(...criticalIssues);
+        }
+      }
+    }
+
+    // Determine if valid (no high/critical issues)
+    const criticalIssues = allIssues.filter(i => i.severity === 'critical' || i.severity === 'high');
+    const isValid = criticalIssues.length === 0;
+
+    return {
+      isValid,
+      issues: allIssues,
+      score: Math.max(0, totalScore)
+    };
+  }
+
+  getSystemPrompt(language = 'en', industry = 'general') {
     const languageNames = {
       nl: 'Dutch', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', en: 'English'
     };
     const langName = languageNames[language] || 'English';
 
-    return `You are an elite website copywriter who creates compelling, conversion-optimized content.
+    // Get industry-specific tone guidance
+    const toneGuidance = generateToneGuidance(industry);
 
-YOUR TASK: Generate complete website copy for a local business. Create content that is:
-- Specific to THIS business (use their name, location, services)
-- Professional but warm and approachable
-- Benefit-focused (what customers GET, not what the business DOES)
-- Locally relevant (mention the service area naturally)
-- Trustworthy and genuine (no hype or fake urgency)
+    return `You are an elite direct-response copywriter trained by legends like David Ogilvy, Gary Halbert, and Eugene Schwartz. You write copy that CONVERTS - not just sounds good.
+
+YOUR MISSION: Create website copy that turns visitors into customers. Every word must earn its place.
+
+COPYWRITING PRINCIPLES YOU MUST FOLLOW:
+
+1. SPECIFICITY BEATS GENERALITY
+   ❌ "Quality service" → ✅ "37 years serving Boston. 4,200+ happy customers."
+   ❌ "Trusted professionals" → ✅ "Licensed #12345. BBB A+ rated since 2010."
+   ❌ "Great prices" → ✅ "Average job: $185. Free estimates, always."
+
+2. BENEFITS OVER FEATURES
+   ❌ "We use advanced equipment" → ✅ "Your problem fixed in hours, not days"
+   ❌ "Our team is experienced" → ✅ "Sleep easy knowing it's done right"
+   ❌ "We offer many services" → ✅ "One call handles everything"
+
+3. CUSTOMER-FOCUSED LANGUAGE
+   ❌ "We pride ourselves..." → ✅ "You get..."
+   ❌ "Our company offers..." → ✅ "Your home gets..."
+   ❌ "We believe in..." → ✅ "You deserve..."
+
+4. CREDIBILITY THROUGH FACTS
+   - Use specific numbers (years, customers, ratings)
+   - Reference real credentials (licenses, certifications)
+   - Mention local areas by name
+   - Include guarantees and warranties
+
+5. EMOTIONAL RESONANCE
+   - Address the customer's pain points
+   - Paint a picture of the desired outcome
+   - Use sensory and emotional language
+   - Create a sense of relief/satisfaction
+
+${toneGuidance}
+
+ABSOLUTE BANS (using these phrases will get your content rejected):
+- "quality service" / "trusted partner" / "one-stop shop"
+- "state-of-the-art" / "cutting-edge" / "world-class"
+- "commitment to excellence" / "passion for" / "go above and beyond"
+- "your satisfaction is our priority" / "we treat you like family"
+- "dedicated team of professionals" / "years of combined experience"
+- Generic openers: "Welcome to..." / "We are a..." / "About us..."
 
 CRITICAL: Write ALL content in ${langName}. Match the language and cultural tone of the target market.
 
@@ -126,11 +282,84 @@ OUTPUT: Return valid JSON only. No markdown, no explanations, just the JSON obje
       scrapedTestimonials: (siteData.testimonials || []).slice(0, 3),
       // Ratings/reviews if available
       rating: siteData.rating,
-      reviewCount: siteData.reviewCount
+      reviewCount: siteData.reviewCount,
+      // Trust signals for specific, credible content
+      trustSignals: siteData.trustSignals || null
     };
   }
 
-  buildComprehensivePrompt(context, industryContent) {
+  /**
+   * Build trust signal context string for inclusion in prompts
+   */
+  buildTrustSignalContext(trustSignals) {
+    if (!trustSignals) return '';
+
+    const lines = [];
+
+    if (trustSignals.yearsInBusiness) {
+      lines.push(`- ${trustSignals.yearsInBusiness}+ years in business`);
+    }
+    if (trustSignals.foundedYear) {
+      lines.push(`- Established ${trustSignals.foundedYear}`);
+    }
+    if (trustSignals.certifications && trustSignals.certifications.length > 0) {
+      lines.push(`- Credentials: ${trustSignals.certifications.join(', ')}`);
+    }
+    if (trustSignals.licenses && trustSignals.licenses.length > 0) {
+      lines.push(`- License: ${trustSignals.licenses[0]}`);
+    }
+    if (trustSignals.customerCount) {
+      lines.push(`- ${trustSignals.customerCount} customers served`);
+    }
+    if (trustSignals.awards && trustSignals.awards.length > 0) {
+      lines.push(`- Awards: ${trustSignals.awards.slice(0, 2).join(', ')}`);
+    }
+    if (trustSignals.guarantees && trustSignals.guarantees.length > 0) {
+      lines.push(`- Guarantees: ${trustSignals.guarantees.join(', ')}`);
+    }
+    if (trustSignals.serviceAreas && trustSignals.serviceAreas.length > 0) {
+      lines.push(`- Service areas: ${trustSignals.serviceAreas.slice(0, 3).join(', ')}`);
+    }
+
+    if (lines.length === 0) return '';
+
+    return `\nTRUST SIGNALS (use these specific facts to make content credible):\n${lines.join('\n')}`;
+  }
+
+  /**
+   * Generate headline examples using the headline formulas module
+   */
+  generateHeadlineExamples(context) {
+    try {
+      // Build site data structure for headline formulas
+      const siteData = {
+        businessName: context.businessName,
+        address: context.address,
+        city: context.city,
+        trustSignals: context.trustSignals,
+        rating: context.rating,
+        reviewCount: context.reviewCount
+      };
+
+      // Generate headline options
+      const options = generateHeadlineOptions(siteData, context.industry);
+
+      if (options.length === 0) {
+        return '- Use specific numbers and location in headlines\n- Focus on customer benefits, not business features';
+      }
+
+      // Format as prompt examples
+      return options
+        .slice(0, 3)
+        .map((opt, i) => `${i + 1}. "${opt.text}" (${opt.category})`)
+        .join('\n');
+    } catch (error) {
+      log.warn('Failed to generate headline examples', { error: error.message });
+      return '- Use specific numbers and location in headlines\n- Focus on customer benefits, not business features';
+    }
+  }
+
+  buildComprehensivePrompt(context, industryContent, rejectionFeedback = null) {
     const servicesHint = context.scrapedServices.length > 0
       ? `Services found on site: ${context.scrapedServices.join(', ')}`
       : `Typical ${context.industry} services might include: ${industryContent?.services?.slice(0, 4).join(', ') || 'various services'}`;
@@ -143,13 +372,23 @@ OUTPUT: Return valid JSON only. No markdown, no explanations, just the JSON obje
       ? `\nReal testimonials found:\n${context.scrapedTestimonials.map(t => `- "${t.text?.substring(0, 100)}..." - ${t.author || 'Customer'}`).join('\n')}`
       : '';
 
-    return `Create complete website copy for this ${context.industry} business:
+    const trustSignalContext = this.buildTrustSignalContext(context.trustSignals);
 
+    const rejectionSection = rejectionFeedback
+      ? `\n⚠️ PREVIOUS ATTEMPT REJECTED:\n${rejectionFeedback}\n`
+      : '';
+
+    // Generate headline examples from formulas
+    const headlineExamples = this.generateHeadlineExamples(context);
+
+    return `Create complete website copy for this ${context.industry} business:
+${rejectionSection}
 BUSINESS INFO:
 - Name: ${context.businessName}
 - Industry: ${context.industry}
 - ${locationHint}
 ${context.rating ? `- Rating: ${context.rating}/5 (${context.reviewCount || 'many'} reviews)` : ''}
+${trustSignalContext}
 
 CONTENT REFERENCE (from their current site - use for context, but write BETTER versions):
 - Headlines found: ${context.scrapedHeadlines.slice(0, 3).join(' | ') || 'None found'}
@@ -159,6 +398,21 @@ ${testimonialHint}
 INDUSTRY CONTEXT:
 - Customer pain points: ${industryContent?.painPoints?.slice(0, 2).join('; ') || 'Need reliable, quality service'}
 - Key benefits to highlight: ${industryContent?.benefits?.slice(0, 2).join('; ') || 'Professional, trustworthy service'}
+
+📝 HEADLINE INSPIRATION (use these patterns, adapt to this business):
+${headlineExamples}
+
+⛔ FORBIDDEN PHRASES (never use these - they are generic clichés):
+- "quality service", "trusted partner", "one-stop shop", "solutions for all your needs"
+- "state-of-the-art", "cutting-edge", "world-class", "best in class", "second to none"
+- "commitment to excellence", "dedicated team of professionals", "years of combined experience"
+- "customer satisfaction guaranteed", "we go above and beyond", "passion for"
+- "industry-leading", "top-notch", "unparalleled service", "unmatched quality"
+
+✅ INSTEAD, USE:
+- Specific numbers: "Serving Boston since 1987" not "Serving you for years"
+- Concrete facts: "Licensed, Insured, BBB A+" not "Trusted professionals"
+- Local specificity: "North Shore's go-to plumber" not "Your local expert"
 
 GENERATE THIS JSON (all fields required):
 {
@@ -188,7 +442,9 @@ REQUIREMENTS:
 - Generate 4-6 services (use scraped services as starting point, but write compelling descriptions)
 - Generate 3-4 "Why Us" items (e.g., experienced, licensed, local, guaranteed)
 - Make everything specific to ${context.businessName} and ${context.city || 'their area'}
-- Icon names should be: wrench, shield, clock, star, users, home, phone, truck, award, heart, check, zap`;
+- Icon names should be: wrench, shield, clock, star, users, home, phone, truck, award, heart, check, zap
+- USE the trust signals above to create specific, credible content
+- NEVER use generic phrases - every sentence must be specific to THIS business`;
   }
 
   parseResponse(responseText) {

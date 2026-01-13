@@ -38,6 +38,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
     "cheerio": "1.0.0-rc.12",
+    "clean-css": "^5.3.3",
     "commander": "^12.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",

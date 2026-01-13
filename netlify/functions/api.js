@@ -3,9 +3,9 @@
 
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import * as db from '../../src/db.js';
 import { OutreachManager } from '../../src/outreach.js';
-import NetlifyDeployer from '../../src/netlifyDeploy.js';
 import { scrapeSiteLite } from '../../src/scraperLite.js';
 import TemplateBuilder from '../../src/templateBuilder.js';
 import AIPolisher from '../../src/aiPolish.js';
@@ -137,16 +137,6 @@ app.patch('/api/deployments/:siteId', async (req, res) => {
 // Delete deployment
 app.delete('/api/deployments/:siteId', async (req, res) => {
   try {
-    // Optionally delete from Netlify too
-    if (process.env.NETLIFY_AUTH_TOKEN && req.query.deleteNetlify === 'true') {
-      const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
-      try {
-        await deployer.deleteSite(req.params.siteId);
-      } catch (e) {
-        log.warn('Failed to delete Netlify site', { error: e.message });
-      }
-    }
-
     await db.deleteDeployment(req.params.siteId);
     res.json({ success: true });
   } catch (error) {
@@ -224,10 +214,6 @@ app.post('/api/pipeline', async (req, res) => {
       return res.status(400).json({ error: 'FIRECRAWL_API_KEY not configured' });
     }
 
-    if (!process.env.NETLIFY_AUTH_TOKEN) {
-      return res.status(400).json({ error: 'NETLIFY_AUTH_TOKEN not configured' });
-    }
-
     log.info('Starting serverless pipeline', { url });
 
     // 1. Scrape with Firecrawl
@@ -252,32 +238,26 @@ app.post('/api/pipeline', async (req, res) => {
     // 4. Generate final HTML
     const finalHtml = await builder.buildWithSlots(siteData, polishedSlots);
 
-    // 5. Deploy to Netlify
-    log.info('Deploying to Netlify...');
-    const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
-    const deployment = await deployer.deploy(finalHtml, siteData.businessName || 'preview');
-
-    // 6. Save to database
-    const city = extractCity(siteData.address);
-    await db.saveDeployment({
-      siteId: deployment.siteId,
-      siteName: deployment.siteName,
-      original: url,
-      preview: deployment.url,
+    // 5. Generate slug and save to database
+    const slug = crypto.randomBytes(8).toString('hex');
+    const preview = await db.createPreview({
+      slug,
+      originalUrl: url,
       businessName: siteData.businessName,
       industry,
-      phone: siteData.phone,
-      email: siteData.email,
-      address: siteData.address,
-      city
+      html: finalHtml,
+      siteData,
+      slots: polishedSlots,
+      status: 'complete'
     });
 
-    log.info('Pipeline complete', { preview: deployment.url });
+    const previewUrl = `/preview/${slug}`;
+    log.info('Pipeline complete', { preview: previewUrl });
 
     res.json({
       success: true,
-      siteId: deployment.siteId,
-      preview: deployment.url,
+      slug,
+      preview: previewUrl,
       businessName: siteData.businessName,
       industry
     });

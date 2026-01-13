@@ -34,7 +34,21 @@ export const INDUSTRY_CONTENT = {
       'Schedule Service',
       'Book Online'
     ],
-    testimonialTones: ['relieved', 'grateful', 'impressed']
+    testimonialTones: ['relieved', 'grateful', 'impressed'],
+    // Industry-specific clichés to avoid
+    clichesToAvoid: [
+      'draining your worries', 'pipe dreams', 'going with the flow',
+      'plumbing solutions', 'water management services',
+      'your trusted plumbing partner'
+    ],
+    // Proven effective phrases for this industry
+    powerPhrases: [
+      'Fixed right, priced right',
+      'Leaks stopped. Drains cleared. Done.',
+      'There when you need us',
+      'Clean work. Fair prices.',
+      'Your pipes are in good hands'
+    ]
   },
 
   electrician: {
@@ -65,7 +79,19 @@ export const INDUSTRY_CONTENT = {
       'Call Now',
       'Book Today'
     ],
-    testimonialTones: ['relieved', 'satisfied', 'confident']
+    testimonialTones: ['relieved', 'satisfied', 'confident'],
+    clichesToAvoid: [
+      'electrifying service', 'shocking deals', 'power up your life',
+      'electrical solutions', 'current with the times',
+      'wired for success'
+    ],
+    powerPhrases: [
+      'Safe wiring. Code compliant. Done right.',
+      'Lights on. Worries off.',
+      'Your safety is our standard',
+      'Inspect. Repair. Protect.',
+      'One call fixes it all'
+    ]
   },
 
   restaurant: {
@@ -251,7 +277,322 @@ export const INDUSTRY_CONTENT = {
       'Call Us',
       'New Patient Special'
     ],
-    testimonialTones: ['relieved', 'comfortable', 'confident']
+    testimonialTones: ['relieved', 'comfortable', 'confident'],
+    clichesToAvoid: [
+      'something to smile about', 'dental excellence',
+      'sinking your teeth into', 'bite-sized',
+      'keeping you smiling'
+    ],
+    powerPhrases: [
+      'Gentle care. Beautiful smiles.',
+      'The dentist you\'ll actually like',
+      'Anxiety-free dentistry',
+      'Modern comfort. Caring team.',
+      'Your smile, our priority'
+    ]
+  },
+
+  // ===== NEW INDUSTRIES =====
+
+  hvac: {
+    painPoints: [
+      'No A/C in the middle of summer',
+      'Heating system breaks down in winter',
+      'Sky-high energy bills each month',
+      'Uneven temperatures throughout the house',
+      'Waiting days for service during peak season'
+    ],
+    benefits: [
+      '24/7 emergency service - even on weekends',
+      'Energy-efficient systems that lower your bills',
+      'Maintenance plans that prevent breakdowns',
+      'Even heating and cooling in every room',
+      'Same-day service when available'
+    ],
+    usps: [
+      'NATE Certified',
+      '24/7 Emergency',
+      'Free Estimates',
+      'Financing Available',
+      'Maintenance Plans'
+    ],
+    ctaOptions: [
+      'Get Free Estimate',
+      'Schedule Service',
+      'Call Now',
+      'Book Maintenance'
+    ],
+    testimonialTones: ['relieved', 'comfortable', 'grateful'],
+    clichesToAvoid: [
+      'keeping you cool', 'hot deals', 'chilling out',
+      'climate solutions', 'heating up savings',
+      'cool comfort'
+    ],
+    powerPhrases: [
+      'Cool in summer. Warm in winter. Always.',
+      'Comfort you can count on',
+      'Lower bills. Better comfort.',
+      'There when you need us most',
+      'Stay comfortable year-round'
+    ]
+  },
+
+  roofing: {
+    painPoints: [
+      'Leaks damaging your home during storms',
+      'Missing or damaged shingles',
+      'Insurance claim headaches after a storm',
+      'Not knowing if your roof needs replacement',
+      'Contractors who disappear after taking deposits'
+    ],
+    benefits: [
+      'Free storm damage inspections',
+      'Direct insurance billing and claim assistance',
+      'Quality materials with manufacturer warranties',
+      'Licensed, bonded, and insured crews',
+      'No payment until you\'re satisfied'
+    ],
+    usps: [
+      'Insurance Specialist',
+      'Free Inspections',
+      'Warranty Included',
+      'Licensed & Bonded',
+      'Storm Damage Experts'
+    ],
+    ctaOptions: [
+      'Free Roof Inspection',
+      'Get Free Estimate',
+      'Call Now',
+      'Schedule Inspection'
+    ],
+    testimonialTones: ['relieved', 'protected', 'satisfied'],
+    clichesToAvoid: [
+      'raising the roof', 'over your head',
+      'roofing solutions', 'top-notch roofing',
+      'covering all your needs'
+    ],
+    powerPhrases: [
+      'Leak-free. Guaranteed.',
+      'Storm damage? We handle the insurance.',
+      'Your roof. Our reputation.',
+      'Protect your biggest investment',
+      'Weather the storm with confidence'
+    ]
+  },
+
+  landscaping: {
+    painPoints: [
+      'Overgrown yard that\'s embarrassing',
+      'No time to maintain the lawn',
+      'Dead grass and brown patches',
+      'Unreliable lawn services that no-show',
+      'Drainage problems flooding your yard'
+    ],
+    benefits: [
+      'Reliable weekly service - same crew every time',
+      'Beautiful lawns that impress the neighbors',
+      'Professional design for outdoor living spaces',
+      'Seasonal cleanup and maintenance included',
+      'Drainage solutions that work'
+    ],
+    usps: [
+      'Reliable Service',
+      'Same Crew Weekly',
+      'Free Design Consult',
+      'Seasonal Packages',
+      'Locally Owned'
+    ],
+    ctaOptions: [
+      'Get Free Quote',
+      'Schedule Consult',
+      'Call Us',
+      'Book Service'
+    ],
+    testimonialTones: ['impressed', 'satisfied', 'proud'],
+    clichesToAvoid: [
+      'growing your dreams', 'green with envy',
+      'landscaping solutions', 'branching out',
+      'rooted in quality'
+    ],
+    powerPhrases: [
+      'The lawn you deserve',
+      'Love your yard again',
+      'Curb appeal. Made easy.',
+      'Your outdoor oasis awaits',
+      'Same crew. Every time. On time.'
+    ]
+  },
+
+  auto: {
+    painPoints: [
+      'Not trusting mechanics to be honest',
+      'Surprise repair bills that break the bank',
+      'Waiting all day for simple repairs',
+      'Dealerships charging outrageous prices',
+      'Not understanding what\'s actually wrong'
+    ],
+    benefits: [
+      'Honest diagnostics - we explain everything first',
+      'Upfront pricing before any work begins',
+      'Same-day service for most repairs',
+      'Warranty on parts and labor',
+      'Fair prices - often 30% less than dealers'
+    ],
+    usps: [
+      'ASE Certified',
+      'Honest Pricing',
+      'Same-Day Service',
+      'Warranty Included',
+      'Free Diagnostics'
+    ],
+    ctaOptions: [
+      'Schedule Service',
+      'Get Free Diagnostic',
+      'Call Now',
+      'Book Appointment'
+    ],
+    testimonialTones: ['relieved', 'trusting', 'satisfied'],
+    clichesToAvoid: [
+      'driving success', 'on the road to savings',
+      'auto solutions', 'revving up quality',
+      'full throttle service'
+    ],
+    powerPhrases: [
+      'Honest work. Fair prices.',
+      'The mechanic you can trust',
+      'No surprises. Just solutions.',
+      'Dealer quality. Neighborhood prices.',
+      'We explain before we fix'
+    ]
+  },
+
+  cleaning: {
+    painPoints: [
+      'Cleaning services that do a mediocre job',
+      'Different cleaners every time who don\'t know your home',
+      'Products that aggravate allergies',
+      'Services that cancel at the last minute',
+      'Not trusting strangers in your home'
+    ],
+    benefits: [
+      'Same cleaner every visit - they know your home',
+      'Background-checked, bonded, and insured staff',
+      'Eco-friendly products safe for families and pets',
+      '100% satisfaction guarantee',
+      'Flexible scheduling that works for you'
+    ],
+    usps: [
+      'Same Cleaner Always',
+      'Background Checked',
+      'Eco-Friendly',
+      'Bonded & Insured',
+      'Satisfaction Guaranteed'
+    ],
+    ctaOptions: [
+      'Get Free Quote',
+      'Book Cleaning',
+      'Call Us',
+      'Schedule Today'
+    ],
+    testimonialTones: ['relieved', 'happy', 'trusting'],
+    clichesToAvoid: [
+      'cleaning up the competition', 'sparkling success',
+      'cleaning solutions', 'wiping away worries',
+      'sweeping you off your feet'
+    ],
+    powerPhrases: [
+      'Come home to clean',
+      'Trust us in your home',
+      'Your time back. Your home spotless.',
+      'Same cleaner. Every time.',
+      'Clean home. Clear mind.'
+    ]
+  },
+
+  insurance: {
+    painPoints: [
+      'Confusing policies with hidden exclusions',
+      'Agents who disappear after the sale',
+      'Claims that get denied without explanation',
+      'Premiums that keep going up',
+      'One-size-fits-all coverage that doesn\'t fit'
+    ],
+    benefits: [
+      'Independent agent who works for YOU, not the insurance company',
+      'Compare rates from multiple carriers',
+      'Claims advocacy - we fight for your claim',
+      'Annual policy reviews to save you money',
+      'Local service when you need us most'
+    ],
+    usps: [
+      'Independent Agent',
+      'Multiple Carriers',
+      'Claims Advocacy',
+      'Local Service',
+      'Free Policy Review'
+    ],
+    ctaOptions: [
+      'Get Free Quote',
+      'Review My Policy',
+      'Call Us',
+      'Compare Rates'
+    ],
+    testimonialTones: ['protected', 'confident', 'grateful'],
+    clichesToAvoid: [
+      'insuring your future', 'peace of mind guaranteed',
+      'insurance solutions', 'covering all bases',
+      'protecting what matters most'
+    ],
+    powerPhrases: [
+      'We work for you. Not them.',
+      'Your advocate when it matters',
+      'Better coverage. Better price.',
+      'Someone in your corner',
+      'Compare. Save. Relax.'
+    ]
+  },
+
+  accountant: {
+    painPoints: [
+      'Dreading tax season every year',
+      'Worried about missing deductions',
+      'Fear of IRS audits and penalties',
+      'Disorganized finances causing stress',
+      'Accountants who only talk to you once a year'
+    ],
+    benefits: [
+      'Year-round tax planning, not just April',
+      'Proactive strategies to minimize tax burden',
+      'IRS audit representation included',
+      'Clear explanations in plain English',
+      'Responsive communication when you need answers'
+    ],
+    usps: [
+      'CPA Licensed',
+      'Year-Round Service',
+      'Audit Protection',
+      'Tax Planning',
+      'Small Business Specialist'
+    ],
+    ctaOptions: [
+      'Free Consultation',
+      'Schedule Review',
+      'Call Us',
+      'Get Started'
+    ],
+    testimonialTones: ['relieved', 'confident', 'organized'],
+    clichesToAvoid: [
+      'counting on success', 'adding up savings',
+      'accounting solutions', 'balancing your needs',
+      'your financial partner'
+    ],
+    powerPhrases: [
+      'Keep more. Stress less.',
+      'Year-round tax help',
+      'Your numbers. Our expertise.',
+      'Tax stress? We handle it.',
+      'Maximize every deduction'
+    ]
   },
 
   general: {

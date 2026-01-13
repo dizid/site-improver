@@ -105,6 +105,9 @@ async function scrapeWithFirecrawl(url, apiKey) {
     // Extract structured data from JSON-LD
     const structuredData = extractStructuredData($);
 
+    // Extract trust signals (years in business, licenses, certifications, etc.)
+    const trustSignals = extractTrustSignals($, html);
+
     const data = {
       url,
       scrapedAt: new Date().toISOString(),
@@ -115,6 +118,8 @@ async function scrapeWithFirecrawl(url, apiKey) {
       ...extractMedia($, url),
       ...extractMeta($),
       colors,
+      // Trust signals
+      trustSignals,
       // Schema.org structured data
       rating: structuredData.rating,
       reviewCount: structuredData.reviewCount,
@@ -814,6 +819,163 @@ function extractColorsFromCSS($, html) {
 
   // Return defaults if none found
   return filtered.length > 0 ? filtered : ['#1e40af', '#3b82f6'];
+}
+
+/**
+ * Extract trust signals from page content
+ * Years in business, licenses, certifications, customer counts, awards, guarantees
+ */
+function extractTrustSignals($, html) {
+  const fullText = $('body').text().replace(/\s+/g, ' ');
+  const trustSignals = {
+    foundedYear: null,
+    yearsInBusiness: null,
+    licenses: [],
+    certifications: [],
+    customerCount: null,
+    awards: [],
+    guarantees: [],
+    serviceAreas: []
+  };
+
+  // Extract years in business / founded year
+  // Patterns: "Since 1987", "Est. 2010", "Established 1995", "Founded in 2000", "25+ years"
+  const yearPatterns = [
+    /(?:since|est\.?|established|founded(?:\s+in)?)\s*(\d{4})/gi,
+    /(\d{4})\s*[-–]\s*(?:present|today|now|\d{4})/gi
+  ];
+
+  for (const pattern of yearPatterns) {
+    const matches = fullText.matchAll(pattern);
+    for (const match of matches) {
+      const year = parseInt(match[1]);
+      if (year >= 1900 && year <= new Date().getFullYear()) {
+        trustSignals.foundedYear = year;
+        trustSignals.yearsInBusiness = new Date().getFullYear() - year;
+        break;
+      }
+    }
+    if (trustSignals.foundedYear) break;
+  }
+
+  // "25+ years experience" pattern
+  if (!trustSignals.yearsInBusiness) {
+    const yearsMatch = fullText.match(/(\d+)\+?\s*years?\s*(?:of\s+)?(?:experience|in\s+business|serving|service)/i);
+    if (yearsMatch) {
+      trustSignals.yearsInBusiness = parseInt(yearsMatch[1]);
+    }
+  }
+
+  // Extract license numbers
+  const licensePatterns = [
+    /(?:license|lic|contractor)\s*[#:]?\s*([A-Z0-9][-A-Z0-9]{3,15})/gi,
+    /(?:ROC|CBC|CFC|HIC)\s*[#:]?\s*(\d+)/gi
+  ];
+
+  for (const pattern of licensePatterns) {
+    const matches = fullText.matchAll(pattern);
+    for (const match of matches) {
+      const license = match[1].trim();
+      if (license && !trustSignals.licenses.includes(license)) {
+        trustSignals.licenses.push(license);
+      }
+    }
+  }
+
+  // Extract certifications (keywords in context)
+  const certKeywords = [
+    'licensed', 'insured', 'bonded', 'certified', 'accredited',
+    'BBB', 'EPA', 'NATE', 'master plumber', 'master electrician',
+    'journeyman', 'OSHA', 'ISO', 'LEED', 'Energy Star'
+  ];
+
+  for (const keyword of certKeywords) {
+    const regex = new RegExp(`\\b${keyword.replace(/\s+/g, '\\s+')}\\b`, 'gi');
+    if (regex.test(fullText)) {
+      const normalizedKeyword = keyword.charAt(0).toUpperCase() + keyword.slice(1).toLowerCase();
+      if (!trustSignals.certifications.includes(normalizedKeyword)) {
+        trustSignals.certifications.push(normalizedKeyword);
+      }
+    }
+  }
+
+  // Extract customer count
+  const customerPatterns = [
+    /(\d{1,3}(?:,\d{3})*|\d+)\+?\s*(?:happy\s+)?(?:customers?|clients?|families|homes|projects|jobs)/gi,
+    /(?:served|helped|trusted\s+by)\s*(?:over\s+)?(\d{1,3}(?:,\d{3})*|\d+)\+?/gi
+  ];
+
+  for (const pattern of customerPatterns) {
+    const match = fullText.match(pattern);
+    if (match) {
+      // Extract just the number
+      const numMatch = match[0].match(/(\d{1,3}(?:,\d{3})*|\d+)/);
+      if (numMatch) {
+        const count = numMatch[1];
+        // Only accept reasonable counts (> 10)
+        if (parseInt(count.replace(/,/g, '')) >= 10) {
+          trustSignals.customerCount = count + '+';
+          break;
+        }
+      }
+    }
+  }
+
+  // Extract awards
+  const awardPatterns = [
+    /(?:best\s+of|award[- ]winning|winner|voted\s+(?:best|#1)|top\s+\d+|#1\s+rated)[\w\s]*(?:\d{4})?/gi,
+    /(?:angie'?s?\s*list|home\s*advisor|yelp)\s*(?:super\s*service\s*)?award/gi
+  ];
+
+  for (const pattern of awardPatterns) {
+    const matches = fullText.matchAll(pattern);
+    for (const match of matches) {
+      const award = match[0].trim().substring(0, 50); // Limit length
+      if (award && !trustSignals.awards.some(a => a.toLowerCase() === award.toLowerCase())) {
+        trustSignals.awards.push(award);
+      }
+    }
+  }
+
+  // Extract guarantees
+  const guaranteeKeywords = [
+    'satisfaction guarantee', 'money back guarantee', '100% satisfaction',
+    'warranty', 'guaranteed', 'no-hassle', 'risk-free', 'free estimates'
+  ];
+
+  for (const keyword of guaranteeKeywords) {
+    const regex = new RegExp(keyword.replace(/\s+/g, '\\s+'), 'gi');
+    if (regex.test(fullText)) {
+      const normalizedGuarantee = keyword.split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+      if (!trustSignals.guarantees.includes(normalizedGuarantee)) {
+        trustSignals.guarantees.push(normalizedGuarantee);
+      }
+    }
+  }
+
+  // Extract service areas
+  const serviceAreaPatterns = [
+    /(?:serving|proudly\s+serving|service\s+area[s]?[:\s]+|covering|we\s+serve)\s+([^.!?\n]{5,100}?)(?:\.|,\s*and|$)/gi,
+    /(?:serving\s+the)\s+([^.!?\n]{5,50}?)(?:\s+area|\s+region|\s+community)/gi
+  ];
+
+  for (const pattern of serviceAreaPatterns) {
+    const matches = fullText.matchAll(pattern);
+    for (const match of matches) {
+      const area = match[1].trim()
+        .replace(/and surrounding areas?/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (area && area.length > 2 && area.length < 100 &&
+          !trustSignals.serviceAreas.includes(area)) {
+        trustSignals.serviceAreas.push(area);
+      }
+    }
+  }
+
+  return trustSignals;
 }
 
 export default { scrapeSiteLite };

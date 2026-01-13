@@ -6,7 +6,6 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import * as db from './db.js';
 import { OutreachManager } from './outreach.js';
-import NetlifyDeployer from './netlifyDeploy.js';
 import logger from './logger.js';
 import { CONFIG, validateStartup } from './config.js';
 import { validateUrl, validateEmail } from './utils.js';
@@ -255,18 +254,6 @@ export function createServer(config = {}) {
   // Delete lead
   app.delete('/api/leads/:leadId', async (req, res) => {
     try {
-      const lead = await db.getLead(req.params.leadId);
-
-      // Optionally delete from Netlify too
-      if (lead?.siteId && process.env.NETLIFY_AUTH_TOKEN && req.query.deleteNetlify === 'true') {
-        const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
-        try {
-          await deployer.deleteSite(lead.siteId);
-        } catch (e) {
-          log.warn('Failed to delete Netlify site', { error: e.message });
-        }
-      }
-
       await db.deleteLead(req.params.leadId);
       res.json({ success: true });
     } catch (error) {
@@ -335,16 +322,6 @@ export function createServer(config = {}) {
   // Delete deployment
   app.delete('/api/deployments/:siteId', async (req, res) => {
     try {
-      // Optionally delete from Netlify too
-      if (process.env.NETLIFY_AUTH_TOKEN && req.query.deleteNetlify === 'true') {
-        const deployer = new NetlifyDeployer(process.env.NETLIFY_AUTH_TOKEN);
-        try {
-          await deployer.deleteSite(req.params.siteId);
-        } catch (e) {
-          log.warn('Failed to delete Netlify site', { error: e.message });
-        }
-      }
-      
       await db.deleteDeployment(req.params.siteId);
       res.json({ success: true });
     } catch (error) {
@@ -623,6 +600,46 @@ export function createServer(config = {}) {
   app.post('/api/previews/cleanup', asyncHandler(async (req, res) => {
     const deleted = await db.cleanupExpiredPreviews();
     res.json({ deleted });
+  }));
+
+  // ==================== PUBLIC PREVIEW PAGE ====================
+
+  // Public preview page - serves HTML directly at /preview/:slug
+  app.get('/preview/:slug', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const preview = await db.getPreviewBySlug(slug);
+
+    if (!preview) {
+      return res.status(404).type('html').send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Not Found</title></head>
+        <body style="font-family: system-ui; padding: 4rem; text-align: center;">
+          <h1>Preview Not Found</h1>
+          <p>This preview doesn't exist or has been removed.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Check expiration
+    if (preview.expiresAt && new Date(preview.expiresAt) < new Date()) {
+      return res.status(410).type('html').send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Expired</title></head>
+        <body style="font-family: system-ui; padding: 4rem; text-align: center;">
+          <h1>Preview Expired</h1>
+          <p>This preview has expired. Contact us if you'd like to see it again.</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Increment view count
+    await db.incrementViewCount(slug);
+
+    res.type('html').send(preview.html);
   }));
 
   // ==================== HANDOVER / EXPORT ====================

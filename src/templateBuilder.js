@@ -3,6 +3,7 @@ import Handlebars from 'handlebars';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import CleanCSS from 'clean-css';
 import logger from './logger.js';
 import { ICONS, getIcon, detectIcon } from '../templates/base/icons.js';
 
@@ -582,7 +583,7 @@ export class TemplateBuilder {
     const variantCSS = this.generateVariantCSS(variant);
 
     // Get hero image for fullwidth variant background
-    const heroImage = siteData.images?.[0]?.src;
+    const heroImage = siteData.images?.[0]?.src || '';
     const heroStyle = variant.heroLayout === 'fullwidth' && heroImage
       ? `style="background-image: url('${heroImage}');"`
       : '';
@@ -593,6 +594,13 @@ export class TemplateBuilder {
     // Generate JSON-LD structured data
     const jsonLd = this.generateStructuredData(siteData, slots);
 
+    // Generate social meta tags (OG, Twitter, canonical)
+    const socialMeta = this.generateSocialMeta(siteData, slots, heroImage);
+
+    // Combine and minify CSS for performance
+    const combinedCSS = `${baseCSS}\n${customCSS}\n${variantCSS}`;
+    const minifiedCSS = this.minifyCSS(combinedCSS);
+
     return `<!DOCTYPE html>
 <html lang="${language}">
 <head>
@@ -600,14 +608,11 @@ export class TemplateBuilder {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
   <meta name="description" content="${description}">
+  ${socialMeta}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="${googleFontsUrl}" rel="stylesheet">
-  <style>
-${baseCSS}
-${customCSS}
-${variantCSS}
-  </style>
+  <style>${minifiedCSS}</style>
   ${jsonLd}
 </head>
 <body class="${variantClass}">
@@ -686,6 +691,102 @@ ${this.getScrollAnimationScript()}
     return `<script type="application/ld+json">
 ${safeJson}
 </script>`;
+  }
+
+  /**
+   * Generate Open Graph, Twitter Card, and other social meta tags
+   */
+  generateSocialMeta(siteData, slots, heroImage) {
+    const businessName = slots.business_name || siteData.businessName || '';
+    const description = slots.subheadline || siteData.description || '';
+    const tagline = slots.headline || siteData.headline || '';
+    const originalUrl = siteData.originalUrl || '';
+    const previewUrl = siteData.previewUrl || '';
+    const primaryColor = siteData.colors?.primary || '#2563eb';
+
+    // Escape values for HTML attributes
+    const escapeAttr = (str) => String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    const ogTitle = escapeAttr(tagline ? `${businessName} - ${tagline}` : businessName);
+    const ogDescription = escapeAttr(description);
+    const ogImage = escapeAttr(heroImage);
+    const ogUrl = escapeAttr(previewUrl || originalUrl);
+    const siteName = escapeAttr(businessName);
+    const canonical = escapeAttr(originalUrl);
+    const themeColor = escapeAttr(primaryColor);
+
+    const tags = [];
+
+    // Open Graph tags
+    tags.push(`<meta property="og:type" content="website">`);
+    if (ogTitle) tags.push(`<meta property="og:title" content="${ogTitle}">`);
+    if (ogDescription) tags.push(`<meta property="og:description" content="${ogDescription}">`);
+    if (ogImage) tags.push(`<meta property="og:image" content="${ogImage}">`);
+    if (ogUrl) tags.push(`<meta property="og:url" content="${ogUrl}">`);
+    if (siteName) tags.push(`<meta property="og:site_name" content="${siteName}">`);
+
+    // Twitter Card tags
+    tags.push(`<meta name="twitter:card" content="summary_large_image">`);
+    if (ogTitle) tags.push(`<meta name="twitter:title" content="${ogTitle}">`);
+    if (ogDescription) tags.push(`<meta name="twitter:description" content="${ogDescription}">`);
+    if (ogImage) tags.push(`<meta name="twitter:image" content="${ogImage}">`);
+
+    // Canonical URL
+    if (canonical) tags.push(`<link rel="canonical" href="${canonical}">`);
+
+    // Theme color for mobile browsers
+    if (themeColor) tags.push(`<meta name="theme-color" content="${themeColor}">`);
+
+    // Robots meta (allow indexing)
+    tags.push(`<meta name="robots" content="index, follow">`);
+
+    return tags.join('\n  ');
+  }
+
+  /**
+   * Minify CSS for production output
+   * Reduces file size by ~60-70% typically
+   */
+  minifyCSS(css) {
+    try {
+      const cleanCSS = new CleanCSS({
+        level: {
+          1: {
+            specialComments: 0  // Remove all comments
+          },
+          2: {
+            mergeMedia: true,   // Merge @media rules
+            mergeIntoShorthands: true,
+            mergeNonAdjacentRules: true,
+            removeDuplicateRules: true
+          }
+        }
+      });
+
+      const result = cleanCSS.minify(css);
+
+      if (result.errors && result.errors.length > 0) {
+        log.warn('CSS minification errors', { errors: result.errors });
+        return css; // Return original on error
+      }
+
+      const savings = css.length - result.styles.length;
+      const savingsPercent = ((savings / css.length) * 100).toFixed(1);
+      log.debug('CSS minified', {
+        original: `${(css.length / 1024).toFixed(1)}KB`,
+        minified: `${(result.styles.length / 1024).toFixed(1)}KB`,
+        savings: `${savingsPercent}%`
+      });
+
+      return result.styles;
+    } catch (error) {
+      log.warn('CSS minification failed, using original', { error: error.message });
+      return css;
+    }
   }
 
   /**

@@ -23,12 +23,6 @@ vi.mock('../src/outreach.js', () => ({
   }))
 }));
 
-vi.mock('../src/netlifyDeploy.js', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    deleteSite: vi.fn().mockResolvedValue(undefined)
-  }))
-}));
-
 describe('server', () => {
   let app;
   let db;

@@ -48,40 +48,103 @@ Return ONLY the improved text in ${langName}, no explanations or quotes.`;
     return this.client;
   }
 
+  /**
+   * Build trust signal context string for AI prompts
+   */
+  buildTrustContext(trustSignals) {
+    if (!trustSignals) return '';
+
+    const lines = [];
+
+    if (trustSignals.yearsInBusiness) {
+      lines.push(`Years in business: ${trustSignals.yearsInBusiness}+ years`);
+    }
+    if (trustSignals.foundedYear) {
+      lines.push(`Founded: ${trustSignals.foundedYear}`);
+    }
+    if (trustSignals.certifications && trustSignals.certifications.length > 0) {
+      lines.push(`Credentials: ${trustSignals.certifications.join(', ')}`);
+    }
+    if (trustSignals.licenses && trustSignals.licenses.length > 0) {
+      lines.push(`License: ${trustSignals.licenses[0]}`);
+    }
+    if (trustSignals.customerCount) {
+      lines.push(`Customers served: ${trustSignals.customerCount}`);
+    }
+    if (trustSignals.awards && trustSignals.awards.length > 0) {
+      lines.push(`Awards: ${trustSignals.awards.slice(0, 2).join(', ')}`);
+    }
+    if (trustSignals.guarantees && trustSignals.guarantees.length > 0) {
+      lines.push(`Guarantees: ${trustSignals.guarantees.join(', ')}`);
+    }
+    if (trustSignals.serviceAreas && trustSignals.serviceAreas.length > 0) {
+      lines.push(`Service areas: ${trustSignals.serviceAreas.slice(0, 3).join(', ')}`);
+    }
+
+    if (lines.length === 0) return '';
+
+    return `
+TRUST SIGNALS (use these to make content specific):
+${lines.join('\n')}`;
+  }
+
   async polishSlot(slotName, originalContent, context) {
+    // Build trust signal context for prompts
+    const trustContext = this.buildTrustContext(context.trustSignals);
+
     const prompts = {
-      headline: `Improve this headline for a ${context.industry} business. Make it punchy and benefit-driven. Max 10 words.
+      headline: `Improve this headline for ${context.businessName}, a ${context.industry} in ${context.city || 'the local area'}.
+Make it punchy, benefit-driven, and SPECIFIC to this business. Max 10 words.
 
 Original: "${originalContent}"
-Business: ${context.businessName}`,
+${trustContext}
 
-      subheadline: `Write a compelling subheadline for a ${context.industry} business. Should support the headline and communicate the core value prop. Max 25 words.
+IMPORTANT:
+- Include specific trust signals (years, certifications, location) when available
+- AVOID generic phrases like "quality service" or "trusted partner"
+- Make it unique to THIS business`,
+
+      subheadline: `Write a compelling subheadline for ${context.businessName}, a ${context.industry} in ${context.city || 'the local area'}.
+Should support the headline and communicate the core value prop. Max 25 words.
 
 Headline: "${context.headline}"
 Original subheadline: "${originalContent}"
-Business: ${context.businessName}
-Location: ${context.city || 'local area'}`,
+${trustContext}
 
-      service_description: `Improve this service description for a ${context.industry}. Make it benefit-focused and concise. Max 20 words.
+IMPORTANT:
+- Reference specific differentiators (years, certifications, service areas)
+- AVOID clichés and generic phrases
+- Be specific about what makes this business unique`,
+
+      service_description: `Improve this service description for ${context.businessName}, a ${context.industry}. Make it benefit-focused and concise. Max 20 words.
 
 Service: "${context.serviceName}"
-Original: "${originalContent}"`,
+Original: "${originalContent}"
+${trustContext}`,
 
       cta_text: `Write a compelling CTA button text for a ${context.industry}. Action-oriented, creates urgency. Max 4 words.
 
 Current: "${originalContent}"
-Page goal: Get visitors to contact/call`,
+Business: ${context.businessName}
+${context.trustSignals?.guarantees?.length > 0 ? `Offers: ${context.trustSignals.guarantees[0]}` : ''}
 
-      about_text: `Rewrite this about section for a ${context.industry}. Build trust, highlight experience, keep it warm and personal. Max 60 words.
+Examples of strong CTAs: "Get Free Quote", "Call Now - 24/7", "Book ${context.city ? context.city + ' ' : ''}Service"`,
+
+      about_text: `Rewrite this about section for ${context.businessName}, a ${context.industry}. Build trust, highlight experience, keep it warm and personal. Max 60 words.
 
 Original: "${originalContent}"
-Business: ${context.businessName}`,
+${trustContext}
 
-      meta_description: `Write an SEO meta description for a ${context.industry} website. Include location if known. Compelling and click-worthy. Max 155 characters.
+IMPORTANT:
+- Use specific facts (years, customers served, certifications)
+- AVOID generic business clichés
+- Sound authentic and local`,
 
-Business: ${context.businessName}
+      meta_description: `Write an SEO meta description for ${context.businessName}, a ${context.industry} website. Include location. Compelling and click-worthy. Max 155 characters.
+
 Services: ${context.services?.slice(0, 3).join(', ') || 'various services'}
-Location: ${context.city || 'local area'}`
+Location: ${context.city || 'local area'}
+${trustContext}`
     };
 
     const prompt = prompts[slotName] || `Improve this text for a ${context.industry} website. Keep it concise and compelling.\n\nOriginal: "${originalContent}"`;
@@ -132,7 +195,11 @@ Return as JSON array: [{"name": "...", "description": "..."}, ...]`;
   async polishAll(slots, siteData) {
     // Set language for this polishing session
     this.language = siteData.language || 'en';
-    log.info('Polishing content', { language: this.language, business: siteData.businessName });
+    log.info('Polishing content', {
+      language: this.language,
+      business: siteData.businessName,
+      hasTrustSignals: !!siteData.trustSignals
+    });
 
     const context = {
       industry: siteData.industry || 'general',
@@ -140,7 +207,9 @@ Return as JSON array: [{"name": "...", "description": "..."}, ...]`;
       city: extractCity(siteData.address),
       services: siteData.services || [],
       headline: slots.headline,
-      language: this.language
+      language: this.language,
+      // Include trust signals for enhanced prompts
+      trustSignals: siteData.trustSignals || null
     };
 
     const polished = { ...slots };
@@ -186,7 +255,10 @@ Return as JSON array: [{"name": "...", "description": "..."}, ...]`;
   }
 
   async polishEntireSite(siteData, slots) {
-    const prompt = `You're rewriting copy for a ${siteData.industry || 'local business'} website rebuild.
+    // Build trust signal context
+    const trustContext = this.buildTrustContext(siteData.trustSignals);
+
+    const prompt = `You're rewriting copy for ${siteData.businessName || 'a local business'}, a ${siteData.industry || 'local business'} website rebuild.
 
 CURRENT SITE DATA:
 Business: ${siteData.businessName || 'Unknown'}
@@ -195,6 +267,14 @@ Phone: ${siteData.phone || 'Unknown'}
 Current Headlines: ${(siteData.headlines || []).slice(0, 3).join(' | ') || 'None'}
 Services: ${(siteData.services || []).slice(0, 6).join(', ') || 'Not specified'}
 About/Description: ${(siteData.paragraphs || [])[0] || 'None'}
+${trustContext}
+
+CRITICAL RULES:
+1. Use the trust signals above to make content SPECIFIC to this business
+2. NEVER use clichés like "quality service", "your trusted partner", "one-stop shop"
+3. Include years in business, certifications, or customer count in headlines/copy when available
+4. Reference the specific location/city
+5. Sound human, local, and authentic - not corporate
 
 TASK:
 Generate polished, conversion-focused copy for each section. Keep the local, personal feel. Be concise.
