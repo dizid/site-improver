@@ -1047,6 +1047,110 @@ export async function cleanupExpiredPreviews() {
   return deleted;
 }
 
+// ==================== ANALYTICS ====================
+
+/**
+ * Record an analytics event for a preview
+ * @param {string} slug - Preview slug
+ * @param {object} event - Event data
+ */
+export async function recordAnalyticsEvent(slug, event) {
+  const timestamp = new Date().toISOString();
+  const eventData = {
+    slug,
+    type: event.type, // 'pageview', 'scroll', 'click', 'form', 'time'
+    data: event.data || {},
+    timestamp,
+    userAgent: event.userAgent || null,
+    sessionId: event.sessionId || null
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('analytics').add(eventData);
+  } else {
+    const localDb = await loadLocalDb();
+    if (!localDb.analytics) localDb.analytics = [];
+    localDb.analytics.push(eventData);
+    // Keep only last 10000 events to prevent unbounded growth
+    if (localDb.analytics.length > 10000) {
+      localDb.analytics = localDb.analytics.slice(-10000);
+    }
+    await saveLocalDb(localDb);
+  }
+
+  return eventData;
+}
+
+/**
+ * Get analytics for a preview
+ * @param {string} slug - Preview slug
+ * @returns {object} Analytics summary
+ */
+export async function getPreviewAnalytics(slug) {
+  let events = [];
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const snapshot = await db.collection('analytics')
+      .where('slug', '==', slug)
+      .orderBy('timestamp', 'desc')
+      .limit(1000)
+      .get();
+    events = snapshot.docs.map(doc => doc.data());
+  } else {
+    const localDb = await loadLocalDb();
+    events = (localDb.analytics || []).filter(e => e.slug === slug);
+  }
+
+  // Aggregate analytics
+  const pageviews = events.filter(e => e.type === 'pageview').length;
+  const uniqueSessions = new Set(events.map(e => e.sessionId).filter(Boolean)).size;
+
+  // Scroll depth tracking
+  const scrollEvents = events.filter(e => e.type === 'scroll');
+  const scrollDepths = {
+    '25': scrollEvents.filter(e => e.data?.depth >= 25).length,
+    '50': scrollEvents.filter(e => e.data?.depth >= 50).length,
+    '75': scrollEvents.filter(e => e.data?.depth >= 75).length,
+    '100': scrollEvents.filter(e => e.data?.depth >= 100).length
+  };
+
+  // Click tracking
+  const clickEvents = events.filter(e => e.type === 'click');
+  const clicks = {
+    cta: clickEvents.filter(e => e.data?.target === 'cta').length,
+    phone: clickEvents.filter(e => e.data?.target === 'phone').length,
+    email: clickEvents.filter(e => e.data?.target === 'email').length,
+    navigation: clickEvents.filter(e => e.data?.target === 'nav').length
+  };
+
+  // Time on page
+  const timeEvents = events.filter(e => e.type === 'time');
+  const avgTimeOnPage = timeEvents.length > 0
+    ? Math.round(timeEvents.reduce((sum, e) => sum + (e.data?.seconds || 0), 0) / timeEvents.length)
+    : 0;
+
+  // Form interactions
+  const formEvents = events.filter(e => e.type === 'form');
+  const formInteractions = {
+    focused: formEvents.filter(e => e.data?.action === 'focus').length,
+    submitted: formEvents.filter(e => e.data?.action === 'submit').length
+  };
+
+  return {
+    slug,
+    pageviews,
+    uniqueSessions,
+    scrollDepths,
+    clicks,
+    avgTimeOnPage,
+    formInteractions,
+    lastViewed: events[0]?.timestamp || null,
+    eventCount: events.length
+  };
+}
+
 export default {
   // Lead functions
   createLead,
@@ -1086,6 +1190,9 @@ export default {
   saveEmailConfig,
   // Stats
   getStats,
+  // Analytics
+  recordAnalyticsEvent,
+  getPreviewAnalytics,
   // Backwards compatibility
   loadDb,
   saveDb

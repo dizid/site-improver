@@ -49,6 +49,7 @@ Automated website rebuilding and cold outreach pipeline. Find businesses with ba
 | **AI Outreach** | Generate personalized cold emails with Claude |
 | **Follow-up Sequence** | Automated 4-email sequence over 14 days |
 | **Dashboard** | Web UI to manage leads and track conversions |
+| **Preview Analytics** | Track views, scroll depth, CTA clicks, and engagement |
 
 ---
 
@@ -450,6 +451,27 @@ The dashboard server exposes these REST endpoints:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/stats` | Get dashboard statistics |
+
+### Preview Analytics
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/preview/:slug/event` | Record analytics event |
+| GET | `/api/preview/:slug/analytics` | Get aggregated analytics |
+
+**Event Types:** `pageview`, `scroll`, `click`, `form`, `time`
+
+**Analytics Response:**
+```json
+{
+  "pageviews": 127,
+  "uniqueSessions": 45,
+  "avgTimeOnPage": 38,
+  "scrollDepths": { "25": 40, "50": 32, "75": 18, "100": 8 },
+  "clicks": { "cta": 12, "phone": 8, "email": 3, "nav": 25 },
+  "formInteractions": { "focused": 15, "submitted": 4 }
+}
+```
 
 **Stats Response:**
 ```json

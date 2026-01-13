@@ -221,11 +221,15 @@ Database Operations
     │       ├─▶ getLeadByUrl(url)
     │       └─▶ updateLead()
     │
-    └─▶ Emails
-            ├─▶ createEmailDraft()
-            ├─▶ getEmailDraft(id)
-            ├─▶ approveEmailDraft()
-            └─▶ moveToHistory()
+    ├─▶ Emails
+    │       ├─▶ createEmailDraft()
+    │       ├─▶ getEmailDraft(id)
+    │       ├─▶ approveEmailDraft()
+    │       └─▶ moveToHistory()
+    │
+    └─▶ Analytics
+            ├─▶ recordAnalyticsEvent(slug, event)
+            └─▶ getPreviewAnalytics(slug)
 ```
 
 ## Data Flow
@@ -288,6 +292,81 @@ Database Operations
 └───────────────────────────────────────────────────────────────┘
 ```
 
+### Preview Analytics Flow
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                    GENERATED PREVIEW                           │
+│                                                                │
+│   ┌─────────────────────────────────────────────────────┐     │
+│   │             INJECTED ANALYTICS SCRIPT               │     │
+│   │                                                     │     │
+│   │  • Generate session ID (sessionStorage)            │     │
+│   │  • Track pageview on load                          │     │
+│   │  • Monitor scroll depth (25%, 50%, 75%, 100%)      │     │
+│   │  • Capture CTA/phone/email clicks                  │     │
+│   │  • Track form focus and submit                     │     │
+│   │  • Record time on page (beforeunload)              │     │
+│   └─────────────────────────────────────────────────────┘     │
+└───────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ POST /api/preview/:slug/event
+┌───────────────────────────────────────────────────────────────┐
+│                    EXPRESS SERVER                              │
+│                                                                │
+│   Event Types: pageview | scroll | click | form | time        │
+│                                                                │
+│   Payload: { type, data, sessionId, userAgent }               │
+└───────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────────┐
+│                      DATABASE                                  │
+│                                                                │
+│   Analytics Events Collection (per preview slug):             │
+│   ┌─────────────────────────────────────────────────────┐    │
+│   │  { type: 'pageview', sessionId, userAgent, data }   │    │
+│   │  { type: 'scroll', sessionId, data: { depth: 50 } } │    │
+│   │  { type: 'click', sessionId, data: { target: 'cta' }}│    │
+│   │  { type: 'time', sessionId, data: { seconds: 45 } } │    │
+│   └─────────────────────────────────────────────────────┘    │
+└───────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ GET /api/preview/:slug/analytics
+┌───────────────────────────────────────────────────────────────┐
+│                  AGGREGATED ANALYTICS                          │
+│                                                                │
+│   {                                                            │
+│     pageviews: 127,                                            │
+│     uniqueSessions: 45,                                        │
+│     avgTimeOnPage: 38,                                         │
+│     scrollDepths: { '25': 40, '50': 32, '75': 18, '100': 8 }, │
+│     clicks: { cta: 12, phone: 8, email: 3, nav: 25 },         │
+│     formInteractions: { focused: 15, submitted: 4 }           │
+│   }                                                            │
+└───────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌───────────────────────────────────────────────────────────────┐
+│                  DASHBOARD (PreviewView.vue)                   │
+│                                                                │
+│   ┌────────────┐ ┌────────────┐ ┌────────────┐               │
+│   │ Page Views │ │  Sessions  │ │ Avg. Time  │               │
+│   │    127     │ │     45     │ │   38s      │               │
+│   └────────────┘ └────────────┘ └────────────┘               │
+│                                                                │
+│   ┌────────────┐ ┌────────────┐ ┌────────────┐               │
+│   │ CTA Clicks │ │Phone Clicks│ │Form Submits│               │
+│   │     12     │ │      8     │ │     4      │               │
+│   └────────────┘ └────────────┘ └────────────┘               │
+│                                                                │
+│   Scroll Depth Bars: [████████░░] 25%: 40                     │
+│                      [██████░░░░] 50%: 32                     │
+│                      [████░░░░░░] 75%: 18                     │
+│                      [██░░░░░░░░] 100%: 8                     │
+└───────────────────────────────────────────────────────────────┘
+```
+
 ## API Endpoints
 
 ### Express Server (`src/server.js`)
@@ -306,6 +385,8 @@ Database Operations
 | GET | `/api/emails/drafts` | List email drafts |
 | POST | `/api/emails/:id/send` | Send approved email |
 | GET | `/api/errors` | Recent pipeline errors |
+| POST | `/api/preview/:slug/event` | Record analytics event |
+| GET | `/api/preview/:slug/analytics` | Get aggregated analytics |
 
 ## External Services
 

@@ -602,6 +602,45 @@ export function createServer(config = {}) {
     res.json({ deleted });
   }));
 
+  // ==================== PREVIEW ANALYTICS ====================
+
+  // Record analytics event
+  app.post('/api/preview/:slug/event', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const { type, data, sessionId } = req.body;
+
+    if (!type) {
+      throw ApiError.badRequest('Event type is required');
+    }
+
+    const validTypes = ['pageview', 'scroll', 'click', 'form', 'time'];
+    if (!validTypes.includes(type)) {
+      throw ApiError.badRequest(`Invalid event type. Must be one of: ${validTypes.join(', ')}`);
+    }
+
+    const event = await db.recordAnalyticsEvent(slug, {
+      type,
+      data: data || {},
+      sessionId: sessionId || null,
+      userAgent: req.get('User-Agent') || null
+    });
+
+    res.json({ success: true, event });
+  }));
+
+  // Get preview analytics
+  app.get('/api/preview/:slug/analytics', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const preview = await db.getPreviewBySlug(slug);
+
+    if (!preview) {
+      throw ApiError.notFound('Preview not found');
+    }
+
+    const analytics = await db.getPreviewAnalytics(slug);
+    res.json(analytics);
+  }));
+
   // ==================== PUBLIC PREVIEW PAGE ====================
 
   // Public preview page - serves HTML directly at /preview/:slug

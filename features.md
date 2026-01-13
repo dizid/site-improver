@@ -17,11 +17,12 @@ A complete automated pipeline for website rebuilding, lead generation, and cold 
 9. [Email Outreach](#email-outreach)
 10. [Batch Processing](#batch-processing)
 11. [Dashboard](#dashboard)
-12. [CLI Commands](#cli-commands)
-13. [API Endpoints](#api-endpoints)
-14. [Configuration](#configuration)
-15. [Database](#database)
-16. [Error Handling & Resilience](#error-handling--resilience)
+12. [Preview Analytics](#preview-analytics)
+13. [CLI Commands](#cli-commands)
+14. [API Endpoints](#api-endpoints)
+15. [Configuration](#configuration)
+16. [Database](#database)
+17. [Error Handling & Resilience](#error-handling--resilience)
 
 ---
 
@@ -682,6 +683,109 @@ Dashboard refreshes data every 30 seconds.
 
 ---
 
+## Preview Analytics
+
+Track engagement and measure the effectiveness of generated previews with built-in analytics.
+
+### Event Tracking
+
+Analytics are automatically injected into all preview pages:
+
+| Event Type | What It Tracks |
+|------------|----------------|
+| `pageview` | Page loads with referrer |
+| `scroll` | Scroll depth milestones (25%, 50%, 75%, 100%) |
+| `click` | CTA buttons, phone links, email links, navigation |
+| `form` | Contact form focus and submission |
+| `time` | Time spent on page (captured on exit) |
+
+### Session Tracking
+
+- **Unique Sessions** - Each visitor gets a session ID stored in sessionStorage
+- **Session Format** - `sess_{timestamp}_{random}` for anonymity
+- **Cross-Visit Tracking** - Sessions persist within browser tab lifetime
+
+### Click Categories
+
+| Category | Triggers |
+|----------|----------|
+| `phone` | Clicks on `tel:` links |
+| `email` | Clicks on `mailto:` links |
+| `cta` | Clicks on `.btn-primary`, `.header-cta` buttons |
+| `nav` | Clicks on navigation links |
+
+### Analytics Dashboard
+
+The preview view displays real-time analytics:
+
+- **Page Views** - Total page loads
+- **Unique Sessions** - Distinct visitor sessions
+- **Avg. Time on Page** - Mean engagement duration
+- **CTA Clicks** - Primary action button clicks
+- **Phone Clicks** - Phone number link clicks
+- **Form Submissions** - Contact form completions
+- **Scroll Depth** - Visual bars showing milestone completion rates
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/preview/:slug/event` | Record analytics event |
+| GET | `/api/preview/:slug/analytics` | Get aggregated analytics |
+
+### Event Payload
+
+```javascript
+{
+  type: 'pageview' | 'scroll' | 'click' | 'form' | 'time',
+  data: {
+    // For scroll: { depth: 25 | 50 | 75 | 100 }
+    // For click: { target: 'phone' | 'email' | 'cta' | 'nav', href?: string, text?: string }
+    // For form: { action: 'focus' | 'submit' }
+    // For time: { seconds: number }
+    // For pageview: { referrer: string }
+  },
+  sessionId: 'sess_...'
+}
+```
+
+### Analytics Aggregation
+
+Returns computed metrics from stored events:
+
+```javascript
+{
+  pageviews: number,
+  uniqueSessions: number,
+  avgTimeOnPage: number,       // In seconds
+  scrollDepths: {
+    '25': number,
+    '50': number,
+    '75': number,
+    '100': number
+  },
+  clicks: {
+    cta: number,
+    phone: number,
+    email: number,
+    nav: number
+  },
+  formInteractions: {
+    focused: number,
+    submitted: number
+  }
+}
+```
+
+### Privacy-Conscious Design
+
+- No cookies required
+- No personally identifiable information collected
+- Session IDs are random and anonymous
+- Data stored only for preview duration (7 days default)
+
+---
+
 ## CLI Commands
 
 ### `scrape <url>`
@@ -791,6 +895,13 @@ npm run process-csv leads.csv -- --dry-run --max-score 50
 | POST | `/api/deployments/:siteId/send-email` | Send initial outreach |
 | POST | `/api/deployments/:siteId/send-followup` | Send follow-up email |
 | POST | `/api/pipeline` | Start pipeline for URL |
+
+### Preview Analytics
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/preview/:slug/event` | Record analytics event |
+| GET | `/api/preview/:slug/analytics` | Get aggregated analytics |
 
 ### Query Parameters
 

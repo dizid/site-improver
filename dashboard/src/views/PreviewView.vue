@@ -47,6 +47,13 @@
           >
             View Original ↗
           </a>
+          <button
+            class="btn btn-ghost"
+            :class="{ active: showAnalytics }"
+            @click="toggleAnalytics"
+          >
+            📊 Analytics
+          </button>
           <span class="preview-expires" :class="{ urgent: isExpiringSoon }">
             {{ expiresText }}
           </span>
@@ -55,6 +62,63 @@
           </span>
         </div>
       </header>
+
+      <!-- Analytics Panel -->
+      <div v-if="showAnalytics" class="analytics-panel">
+        <div v-if="analyticsLoading" class="analytics-loading">
+          Loading analytics...
+        </div>
+        <div v-else-if="analytics" class="analytics-grid">
+          <div class="analytics-card">
+            <div class="analytics-value">{{ analytics.pageviews }}</div>
+            <div class="analytics-label">Page Views</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-value">{{ analytics.uniqueSessions }}</div>
+            <div class="analytics-label">Unique Sessions</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-value">{{ formatTime(analytics.avgTimeOnPage) }}</div>
+            <div class="analytics-label">Avg. Time on Page</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-value">{{ analytics.clicks?.cta || 0 }}</div>
+            <div class="analytics-label">CTA Clicks</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-value">{{ analytics.clicks?.phone || 0 }}</div>
+            <div class="analytics-label">Phone Clicks</div>
+          </div>
+          <div class="analytics-card">
+            <div class="analytics-value">{{ analytics.formInteractions?.submitted || 0 }}</div>
+            <div class="analytics-label">Form Submissions</div>
+          </div>
+          <div class="analytics-card scroll-depth">
+            <div class="analytics-label">Scroll Depth</div>
+            <div class="scroll-bars">
+              <div class="scroll-bar">
+                <div class="scroll-progress" :style="{ width: scrollPercent(25) + '%' }"></div>
+                <span>25%: {{ analytics.scrollDepths?.['25'] || 0 }}</span>
+              </div>
+              <div class="scroll-bar">
+                <div class="scroll-progress" :style="{ width: scrollPercent(50) + '%' }"></div>
+                <span>50%: {{ analytics.scrollDepths?.['50'] || 0 }}</span>
+              </div>
+              <div class="scroll-bar">
+                <div class="scroll-progress" :style="{ width: scrollPercent(75) + '%' }"></div>
+                <span>75%: {{ analytics.scrollDepths?.['75'] || 0 }}</span>
+              </div>
+              <div class="scroll-bar">
+                <div class="scroll-progress" :style="{ width: scrollPercent(100) + '%' }"></div>
+                <span>100%: {{ analytics.scrollDepths?.['100'] || 0 }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="analytics-empty">
+          No analytics data yet
+        </div>
+      </div>
 
       <!-- Iframe with Generated Site -->
       <div class="preview-frame-container">
@@ -82,6 +146,9 @@ const loading = ref(true);
 const error = ref('');
 const isExpired = ref(false);
 const previewFrame = ref(null);
+const showAnalytics = ref(false);
+const analytics = ref(null);
+const analyticsLoading = ref(false);
 
 // Computed
 const expiresText = computed(() => {
@@ -143,6 +210,41 @@ async function fetchPreview() {
 function onFrameLoad() {
   // Could add analytics or interaction tracking here
   console.log('Preview frame loaded');
+}
+
+async function toggleAnalytics() {
+  showAnalytics.value = !showAnalytics.value;
+  if (showAnalytics.value && !analytics.value) {
+    await fetchAnalytics();
+  }
+}
+
+async function fetchAnalytics() {
+  analyticsLoading.value = true;
+  try {
+    const res = await fetch(`/api/preview/${slug}/analytics`);
+    if (res.ok) {
+      analytics.value = await res.json();
+    }
+  } catch (e) {
+    console.error('Failed to fetch analytics:', e);
+  } finally {
+    analyticsLoading.value = false;
+  }
+}
+
+function formatTime(seconds) {
+  if (!seconds) return '0s';
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
+
+function scrollPercent(milestone) {
+  if (!analytics.value?.pageviews || analytics.value.pageviews === 0) return 0;
+  const count = analytics.value.scrollDepths?.[milestone] || 0;
+  return Math.round((count / analytics.value.pageviews) * 100);
 }
 
 // Lifecycle
@@ -331,6 +433,94 @@ onMounted(() => {
 
 .btn-ghost:hover {
   background: #252538;
+  color: #fff;
+}
+
+.btn-ghost.active {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+/* Analytics Panel */
+.analytics-panel {
+  background: #1a1a2e;
+  border-bottom: 1px solid #2a2a3e;
+  padding: 1rem 1.5rem;
+}
+
+.analytics-loading,
+.analytics-empty {
+  text-align: center;
+  color: #6b7280;
+  padding: 1rem;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.analytics-card {
+  background: #252538;
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.analytics-card.scroll-depth {
+  grid-column: span 2;
+  text-align: left;
+}
+
+.analytics-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+.analytics-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scroll-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.scroll-bar {
+  position: relative;
+  background: #1a1a2e;
+  border-radius: 4px;
+  height: 24px;
+  overflow: hidden;
+}
+
+.scroll-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.scroll-bar span {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
   color: #fff;
 }
 

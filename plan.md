@@ -7,6 +7,60 @@ Two-track improvement plan:
 
 ---
 
+# Phased Improvements (2026)
+
+## Phase 1: Foundation ✅ COMPLETE
+**Delivered:**
+- Mobile-first CSS rewrite (min-width queries, 5 breakpoints)
+- Accessibility (lang, skip-link, ARIA, form labels)
+- Netlify Forms with honeypot spam protection
+- JSON-LD LocalBusiness structured data
+- Scroll animations with prefers-reduced-motion
+- Mobile hamburger menu with keyboard support
+- XSS protection in JSON-LD
+
+## Phase 2: Conversion Power ✅ COMPLETE
+**Delivered:**
+- Open Graph & Twitter Card meta tags
+- Trust signal extraction (years in business, certifications, customer counts)
+- Cliché detection and content quality validation
+- Enhanced AI prompts with trust signals
+- Service area extraction
+- Canonical URLs and theme-color meta
+
+## Phase 3: Performance & Polish ✅ COMPLETE
+**Delivered:**
+- CSS optimization (minification, critical path)
+- Responsive images (srcset, lazy loading)
+- Font optimization (font-display: swap)
+- Modern CSS features (container queries, scroll-snap)
+- Lighthouse scores 90+
+
+## Phase 4: Product Intelligence ✅ COMPLETE
+**Delivered:**
+- Preview analytics tracking (pageviews, scroll depth, clicks, time on page)
+- Session-based unique visitor tracking
+- CTA click categorization (phone, email, cta, nav)
+- Form interaction tracking (focus, submit)
+- Analytics dashboard in PreviewView.vue
+- API endpoints: POST `/api/preview/:slug/event`, GET `/api/preview/:slug/analytics`
+- Privacy-conscious design (no cookies, anonymous session IDs)
+
+### Files Modified (Phase 4):
+- `src/db.js` - Added `recordAnalyticsEvent()`, `getPreviewAnalytics()`
+- `src/server.js` - Added analytics API endpoints
+- `src/templateBuilder.js` - Added `getAnalyticsScript()` injected into previews
+- `dashboard/src/views/PreviewView.vue` - Added analytics panel UI
+
+## Phase 5: Scale & Expansion ⏳ PLANNED
+**Planned:**
+- More industries (SaaS, Healthcare, Fitness, E-commerce, Non-profit)
+- More section types (FAQ, pricing tables, timeline, team grid, gallery)
+- Webhook integrations (Slack, Zapier, CRM)
+- Domain management and custom domain setup
+
+---
+
 # Completed Work (2025-12-25)
 
 ## Google API Integration

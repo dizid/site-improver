@@ -621,6 +621,7 @@ ${sections.join('\n').replace('<section class="hero"', `<section class="hero" ${
 </main>
 ${this.getMobileMenuScript()}
 ${this.getScrollAnimationScript()}
+${this.getAnalyticsScript()}
 </body>
 </html>`;
   }
@@ -905,6 +906,116 @@ ${safeJson}
       heroCta.classList.add('pulse');
     }
   }, 3000);
+})();
+</script>`;
+  }
+
+  /**
+   * Generate analytics tracking script
+   * Tracks pageviews, scroll depth, CTA clicks, form interactions, time on page
+   */
+  getAnalyticsScript() {
+    return `<script>
+(function() {
+  // Extract slug from URL path
+  var pathMatch = window.location.pathname.match(/\\/preview\\/([^/]+)/);
+  if (!pathMatch) return;
+  var slug = pathMatch[1];
+
+  // Generate session ID
+  var sessionId = sessionStorage.getItem('_si_session');
+  if (!sessionId) {
+    sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    sessionStorage.setItem('_si_session', sessionId);
+  }
+
+  var startTime = Date.now();
+  var scrollMilestones = { 25: false, 50: false, 75: false, 100: false };
+
+  function sendEvent(type, data) {
+    fetch('/api/preview/' + slug + '/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: type, data: data, sessionId: sessionId })
+    }).catch(function() {});
+  }
+
+  // Track pageview
+  sendEvent('pageview', { referrer: document.referrer });
+
+  // Track scroll depth
+  function trackScroll() {
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    if (docHeight <= 0) return;
+    var scrollPercent = Math.round((scrollTop / docHeight) * 100);
+
+    [25, 50, 75, 100].forEach(function(milestone) {
+      if (scrollPercent >= milestone && !scrollMilestones[milestone]) {
+        scrollMilestones[milestone] = true;
+        sendEvent('scroll', { depth: milestone });
+      }
+    });
+  }
+
+  var scrollTimeout;
+  window.addEventListener('scroll', function() {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(trackScroll, 100);
+  });
+
+  // Track CTA clicks
+  document.addEventListener('click', function(e) {
+    var target = e.target.closest('a, button');
+    if (!target) return;
+
+    var clickData = {};
+    var href = target.getAttribute('href') || '';
+
+    if (href.startsWith('tel:')) {
+      clickData = { target: 'phone', href: href };
+    } else if (href.startsWith('mailto:')) {
+      clickData = { target: 'email', href: href };
+    } else if (target.classList.contains('btn-primary') || target.classList.contains('header-cta')) {
+      clickData = { target: 'cta', text: target.textContent.trim().slice(0, 50) };
+    } else if (target.closest('.main-nav, .mobile-nav-links')) {
+      clickData = { target: 'nav', href: href };
+    }
+
+    if (clickData.target) {
+      sendEvent('click', clickData);
+    }
+  });
+
+  // Track form interactions
+  var contactForm = document.querySelector('form[name="contact"], .contact-form form');
+  if (contactForm) {
+    var formFocused = false;
+    contactForm.addEventListener('focusin', function() {
+      if (!formFocused) {
+        formFocused = true;
+        sendEvent('form', { action: 'focus' });
+      }
+    });
+    contactForm.addEventListener('submit', function() {
+      sendEvent('form', { action: 'submit' });
+    });
+  }
+
+  // Track time on page
+  function sendTimeOnPage() {
+    var seconds = Math.round((Date.now() - startTime) / 1000);
+    if (seconds > 0) {
+      navigator.sendBeacon('/api/preview/' + slug + '/event',
+        JSON.stringify({ type: 'time', data: { seconds: seconds }, sessionId: sessionId })
+      );
+    }
+  }
+
+  window.addEventListener('beforeunload', sendTimeOnPage);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') sendTimeOnPage();
+  });
 })();
 </script>`;
   }
