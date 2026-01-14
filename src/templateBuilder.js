@@ -110,9 +110,28 @@ const __dirname = import.meta.url
   ? path.dirname(fileURLToPath(import.meta.url))
   : process.cwd();
 
+// For serverless environments, try multiple possible template locations
+function findTemplatesDir() {
+  const possiblePaths = [
+    path.join(__dirname, '../templates'),           // Development: src/../templates
+    path.join(process.cwd(), 'templates'),          // Serverless: process.cwd()/templates
+    path.join(__dirname, 'templates'),              // Bundled: same dir as script
+    path.join(__dirname, '../../templates'),        // Alternative relative path
+  ];
+
+  // Return first path (will validate during init)
+  return possiblePaths[0];
+}
+
 export class TemplateBuilder {
   constructor(templatesDir = null) {
-    this.templatesDir = templatesDir || path.join(__dirname, '../templates');
+    this.templatesDir = templatesDir || findTemplatesDir();
+    this.possibleTemplatesPaths = [
+      path.join(__dirname, '../templates'),
+      path.join(process.cwd(), 'templates'),
+      path.join(__dirname, 'templates'),
+      path.join(__dirname, '../../templates'),
+    ];
     this.components = {};
     this.industryConfigs = {};
     this.initialized = false;
@@ -129,6 +148,18 @@ export class TemplateBuilder {
       return options.inverse(this);
     });
 
+    // Try to find a valid templates directory
+    for (const tryPath of this.possibleTemplatesPaths) {
+      try {
+        await fs.access(path.join(tryPath, 'base/components'));
+        this.templatesDir = tryPath;
+        log.info('Found templates directory', { path: tryPath });
+        break;
+      } catch {
+        log.debug('Templates not found at', { path: tryPath });
+      }
+    }
+
     // Load all components
     const componentsDir = path.join(this.templatesDir, 'base/components');
     try {
@@ -140,8 +171,9 @@ export class TemplateBuilder {
         const content = await fs.readFile(path.join(componentsDir, file), 'utf-8');
         this.components[name] = Handlebars.compile(content);
       }
+      log.info('Loaded components', { count: Object.keys(this.components).length });
     } catch (error) {
-      log.warn('Could not load components', { error: error.message });
+      log.warn('Could not load components', { error: error.message, path: componentsDir });
     }
 
     // Load industry configs
@@ -158,6 +190,7 @@ export class TemplateBuilder {
           log.debug(`Skipping industry ${industry} - no config or invalid JSON`);
         }
       }
+      log.info('Loaded industry configs', { count: Object.keys(this.industryConfigs).length });
     } catch (error) {
       log.warn('Could not load industry configs', { error: error.message });
     }
