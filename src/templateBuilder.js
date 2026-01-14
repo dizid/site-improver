@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import CleanCSS from 'clean-css';
 import logger from './logger.js';
 import { ICONS, getIcon, detectIcon } from '../templates/base/icons.js';
+import { resolveSmartFallbacks, isEmptyOrPlaceholder } from './smartFallbacks.js';
 
 const log = logger.child('templateBuilder');
 
@@ -223,6 +224,10 @@ export class TemplateBuilder {
     const mapped = {};
     const slots = config.slots || {};
 
+    // Get smart fallbacks for this industry
+    const industry = config.id || siteData.industry || 'general';
+    const smartFallbacks = resolveSmartFallbacks(siteData, industry);
+
     for (const [slotName, slotConfig] of Object.entries(slots)) {
       let value = null;
 
@@ -231,9 +236,14 @@ export class TemplateBuilder {
         value = this.getByPath(siteData, slotConfig.source);
       }
 
-      // Apply fallback if needed
-      if (!value || (Array.isArray(value) && value.length === 0)) {
-        value = this.interpolateFallback(slotConfig.fallback, siteData);
+      // Apply smart fallback if value is empty or placeholder-like
+      if (isEmptyOrPlaceholder(value)) {
+        // Prefer smart fallback over config fallback
+        if (smartFallbacks[slotName]) {
+          value = smartFallbacks[slotName];
+        } else {
+          value = this.interpolateFallback(slotConfig.fallback, siteData);
+        }
       }
 
       // Truncate if needed
@@ -243,6 +253,14 @@ export class TemplateBuilder {
 
       mapped[slotName] = value;
       mapped[`${slotName}_aiEnhance`] = slotConfig.aiEnhance || false;
+    }
+
+    // Also add smart fallback arrays for sections that might not be in config
+    if (!mapped.services || (Array.isArray(mapped.services) && mapped.services.length === 0)) {
+      mapped.services = smartFallbacks.services;
+    }
+    if (!mapped.why_us_points || (Array.isArray(mapped.why_us_points) && mapped.why_us_points.length === 0)) {
+      mapped.why_us_points = smartFallbacks.why_us_points;
     }
 
     return mapped;

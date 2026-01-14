@@ -577,15 +577,25 @@ app.post('/api/pipeline', async (req, res) => {
     siteData.industry = industry;
     timing('Build complete');
 
-    // 3. AI Polish - DISABLED to reduce pipeline time (10s Netlify limit)
-    // TODO: Re-enable with background function for longer timeout
+    // 3. Quick AI Polish - streamlined for serverless (target <4s)
     let polishedSlots = slots;
-    // if (process.env.ANTHROPIC_API_KEY) {
-    //   log.info('Polishing with AI...');
-    //   const polisher = new AIPolisher();
-    //   polishedSlots = await polisher.polishAll(slots, siteData);
-    // }
-    timing('Polish skipped');
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        log.info('Running quick AI polish...');
+        const { polishCriticalSlots } = await import('../../src/aiPolishLite.js');
+        const enhanced = await polishCriticalSlots(siteData, slots, { timeout: 4000 });
+        if (enhanced.headline) {
+          polishedSlots = { ...slots, ...enhanced };
+          log.info('Quick polish applied', { headline: enhanced.headline?.substring(0, 40) });
+        }
+        timing('Quick polish complete');
+      } catch (e) {
+        log.warn('Quick polish failed, using defaults', { error: e.message });
+        timing('Quick polish failed');
+      }
+    } else {
+      timing('Polish skipped (no API key)');
+    }
 
     // 4. Generate final HTML
     const finalHtml = await builder.buildWithSlots(siteData, polishedSlots);
