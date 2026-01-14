@@ -475,7 +475,7 @@ app.patch('/api/config/email', async (req, res) => {
 // Get preview metadata
 app.get('/api/preview/:slug', async (req, res) => {
   try {
-    const preview = await db.getPreview?.(req.params.slug);
+    const preview = await db.getPreviewBySlug?.(req.params.slug);
     if (!preview) {
       return res.status(404).json({ error: 'Preview not found' });
     }
@@ -489,7 +489,7 @@ app.get('/api/preview/:slug', async (req, res) => {
 // Get preview HTML
 app.get('/api/preview/:slug/html', async (req, res) => {
   try {
-    const preview = await db.getPreview?.(req.params.slug);
+    const preview = await db.getPreviewBySlug?.(req.params.slug);
     if (!preview) {
       return res.status(404).json({ error: 'Preview not found' });
     }
