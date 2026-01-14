@@ -689,6 +689,18 @@ export async function handler(event, context) {
         this.statusCode = code;
         return this;
       },
+      set: function(header, value) {
+        this.headers[header] = value;
+        return this;
+      },
+      send: function(data) {
+        this.body = data;
+        resolve({
+          statusCode: this.statusCode,
+          headers: this.headers,
+          body: this.body
+        });
+      },
       json: function(data) {
         this.body = JSON.stringify(data);
         resolve({
