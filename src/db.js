@@ -9,6 +9,29 @@ import { getFirestore, isFirebaseEnabled, COLLECTIONS, PIPELINE_STATUS } from '.
 const DB_PATH = process.env.DB_PATH || CONFIG.database.defaultPath;
 const log = logger.child('db');
 
+// Firebase has a 1MB document size limit - we stay safely under
+const MAX_DOCUMENT_SIZE = 900000; // 900KB to leave margin
+const FIREBASE_TIMEOUT_MS = 30000; // 30 second timeout for Firebase ops
+
+/**
+ * Wrap a promise with a timeout
+ */
+function withTimeout(promise, ms, operation = 'Firebase operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${operation} timed out after ${ms}ms`)), ms)
+    )
+  ]);
+}
+
+/**
+ * Estimate JSON document size in bytes
+ */
+function estimateSize(obj) {
+  return Buffer.byteLength(JSON.stringify(obj), 'utf8');
+}
+
 // ==================== LOCAL JSON STORAGE ====================
 
 async function loadLocalDb() {
@@ -825,8 +848,38 @@ export async function createPreview(data) {
 
   if (isFirebaseEnabled()) {
     const db = getFirestore();
-    await db.collection('previews').doc(previewId).set(preview);
-    log.info('Preview created in Firebase', { previewId, slug: data.slug });
+
+    // Check document size - Firebase has 1MB limit
+    let docToSave = preview;
+    const size = estimateSize(preview);
+    log.debug('Preview document size', { size, maxSize: MAX_DOCUMENT_SIZE });
+
+    if (size > MAX_DOCUMENT_SIZE) {
+      // Document too large - strip non-essential data (keep HTML for serving)
+      log.warn('Preview document too large, stripping metadata', {
+        originalSize: size,
+        maxSize: MAX_DOCUMENT_SIZE
+      });
+      docToSave = {
+        ...preview,
+        siteData: null, // Strip scraped data (can be re-scraped if needed)
+        slots: null     // Strip slots (embedded in HTML already)
+      };
+      const newSize = estimateSize(docToSave);
+      log.debug('Reduced document size', { newSize });
+
+      if (newSize > MAX_DOCUMENT_SIZE) {
+        throw new Error(`Preview HTML too large for Firebase (${Math.round(newSize/1024)}KB > ${Math.round(MAX_DOCUMENT_SIZE/1024)}KB)`);
+      }
+    }
+
+    // Add timeout to prevent hanging forever
+    await withTimeout(
+      db.collection('previews').doc(previewId).set(docToSave),
+      FIREBASE_TIMEOUT_MS,
+      'Firebase preview save'
+    );
+    log.info('Preview created in Firebase', { previewId, slug: data.slug, size: Math.round(size/1024) + 'KB' });
   } else {
     const localDb = await loadLocalDb();
     localDb.previews = localDb.previews || [];
