@@ -493,10 +493,8 @@ app.get('/api/preview/:slug/html', async (req, res) => {
     if (!preview) {
       return res.status(404).json({ error: 'Preview not found' });
     }
-    res.status(200);
-    res.headers = { ...res.headers, 'Content-Type': 'text/html' };
-    res.body = preview.html;
-    return;
+    res.set('Content-Type', 'text/html');
+    res.send(preview.html || '');
   } catch (error) {
     log.error('Failed to get preview HTML', { error: error.message });
     res.status(500).json({ error: error.message });
