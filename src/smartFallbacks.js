@@ -269,9 +269,23 @@ export function resolveSmartFallbacks(siteData, industry = 'general') {
     cta_text: cta,
     services,
     why_us_points: whyUs,
-    // Additional useful fallbacks
-    section_services: `Our ${normalizedIndustry === 'general' ? '' : normalizedIndustry + ' '}Services`,
-    services_subtitle: content.benefits?.[1] || 'Professional service tailored to your needs'
+
+    // Section headers
+    section_services: `Our ${normalizedIndustry === 'general' ? '' : normalizedIndustry.charAt(0).toUpperCase() + normalizedIndustry.slice(1) + ' '}Services`,
+    services_subtitle: content.benefits?.[1] || 'Professional service tailored to your needs',
+    section_contact: 'Get in Touch',
+    cta_help: 'Have questions? We\'re here to help.',
+    cta_ready: 'Ready to get started?',
+
+    // Form labels
+    form_name: 'Your Name',
+    form_email: 'Email Address',
+    form_phone: 'Phone Number',
+    form_message: 'How can we help?',
+    btn_send: 'Send Message',
+
+    // Business name fallback
+    business_name: data.businessName
   };
 }
 
