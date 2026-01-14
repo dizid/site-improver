@@ -5,6 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import * as db from '../../src/db.js';
+import { isFirebaseEnabled } from '../../src/firebase.js';
 import { OutreachManager } from '../../src/outreach.js';
 import { scrapeSiteLite } from '../../src/scraperLite.js';
 import TemplateBuilder from '../../src/templateBuilder.js';
@@ -424,7 +425,13 @@ app.post('/api/pipeline', async (req, res) => {
       return res.status(400).json({ error: 'FIRECRAWL_API_KEY not configured' });
     }
 
-    log.info('Starting serverless pipeline', { url });
+    log.info('Starting serverless pipeline', {
+      url,
+      firebaseEnabled: isFirebaseEnabled(),
+      hasFirebaseProjectId: !!process.env.FIREBASE_PROJECT_ID,
+      hasFirebaseClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+      hasFirebasePrivateKey: !!process.env.FIREBASE_PRIVATE_KEY
+    });
 
     // 1. Scrape with Firecrawl
     log.info('Scraping site with Firecrawl...');
@@ -450,7 +457,15 @@ app.post('/api/pipeline', async (req, res) => {
 
     // 5. Generate slug and save to database
     const slug = crypto.randomBytes(8).toString('hex');
-    const preview = await db.createPreview({
+    const htmlSize = Buffer.byteLength(finalHtml, 'utf8');
+    log.info('Saving preview to database', {
+      slug,
+      htmlSizeKB: Math.round(htmlSize / 1024),
+      firebaseEnabled: isFirebaseEnabled()
+    });
+
+    // Add timeout to prevent hanging
+    const savePromise = db.createPreview({
       slug,
       originalUrl: url,
       businessName: siteData.businessName,
@@ -461,8 +476,15 @@ app.post('/api/pipeline', async (req, res) => {
       status: 'complete'
     });
 
+    const preview = await Promise.race([
+      savePromise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Preview save timed out after 15 seconds')), 15000)
+      )
+    ]);
+
     const previewUrl = `/preview/${slug}`;
-    log.info('Pipeline complete', { preview: previewUrl });
+    log.info('Pipeline complete', { preview: previewUrl, firebaseEnabled: isFirebaseEnabled() });
 
     res.json({
       success: true,
