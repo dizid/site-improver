@@ -469,6 +469,12 @@ app.post('/api/pipeline', async (req, res) => {
       hasFirebasePrivateKey: !!process.env.FIREBASE_PRIVATE_KEY
     });
 
+    // Wrap entire pipeline in a timeout to prevent hanging
+    const pipelineTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Pipeline timeout: exceeded 25 seconds')), 25000)
+    );
+
+    const pipelineWork = async () => {
     // 1. Scrape with Firecrawl
     log.info('Scraping site with Firecrawl...');
     const siteData = await scrapeSiteLite(url);
@@ -500,35 +506,34 @@ app.post('/api/pipeline', async (req, res) => {
       firebaseEnabled: isFirebaseEnabled()
     });
 
-    // Add timeout to prevent hanging
-    const savePromise = db.createPreview({
+    // Save to database - skip large HTML to avoid timeout
+    // Store only essential metadata for fast save
+    const preview = await db.createPreview({
       slug,
       originalUrl: url,
       businessName: siteData.businessName,
       industry,
-      html: finalHtml,
-      siteData,
-      slots: polishedSlots,
+      html: finalHtml, // Will be stripped if too large by db.createPreview
+      siteData: null,  // Skip to reduce size
+      slots: null,     // Skip to reduce size
       status: 'complete'
     });
-
-    const preview = await Promise.race([
-      savePromise,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Preview save timed out after 15 seconds')), 15000)
-      )
-    ]);
 
     const previewUrl = `/preview/${slug}`;
     log.info('Pipeline complete', { preview: previewUrl, firebaseEnabled: isFirebaseEnabled() });
 
-    res.json({
+    return {
       success: true,
       slug,
       preview: previewUrl,
       businessName: siteData.businessName,
       industry
-    });
+    };
+    }; // end pipelineWork
+
+    // Race pipeline against timeout
+    const result = await Promise.race([pipelineWork(), pipelineTimeout]);
+    res.json(result);
 
   } catch (error) {
     log.error('Pipeline failed', { error: error.message });
