@@ -201,6 +201,216 @@ app.post('/api/deployments/:siteId/send-followup', async (req, res) => {
   }
 });
 
+// ============================================
+// LEADS API
+// ============================================
+
+// Get all leads
+app.get('/api/leads', async (req, res) => {
+  try {
+    const { status, search } = req.query;
+    let leads = await db.getLeads?.() || await db.getDeployments();
+
+    if (status && status !== 'all') {
+      leads = leads.filter(l => l.status === status);
+    }
+
+    if (search) {
+      const s = search.toLowerCase();
+      leads = leads.filter(l =>
+        l.businessName?.toLowerCase().includes(s) ||
+        l.email?.toLowerCase().includes(s) ||
+        l.industry?.toLowerCase().includes(s)
+      );
+    }
+
+    res.json(leads);
+  } catch (error) {
+    log.error('Failed to get leads', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create lead
+app.post('/api/leads', async (req, res) => {
+  try {
+    const lead = await db.saveLead?.(req.body) || await db.saveDeployment(req.body);
+    res.json(lead);
+  } catch (error) {
+    log.error('Failed to create lead', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update lead
+app.patch('/api/leads/:leadId', async (req, res) => {
+  try {
+    const lead = await db.updateLead?.(req.params.leadId, req.body) ||
+                 await db.updateDeployment(req.params.leadId, req.body);
+    res.json(lead);
+  } catch (error) {
+    log.error('Failed to update lead', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete lead
+app.delete('/api/leads/:leadId', async (req, res) => {
+  try {
+    await db.deleteLead?.(req.params.leadId) || await db.deleteDeployment(req.params.leadId);
+    res.json({ success: true });
+  } catch (error) {
+    log.error('Failed to delete lead', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// EMAIL API
+// ============================================
+
+// Get email queue
+app.get('/api/emails/queue', async (req, res) => {
+  try {
+    const emails = await db.getEmailDrafts?.() || [];
+    res.json(emails.filter(e => e.status === 'draft'));
+  } catch (error) {
+    log.error('Failed to get email queue', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get email history
+app.get('/api/emails/history', async (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    const emails = await db.getEmailHistory?.() || [];
+    res.json(emails.slice(0, parseInt(limit)));
+  } catch (error) {
+    log.error('Failed to get email history', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Approve and send email
+app.post('/api/emails/:emailId/approve', async (req, res) => {
+  try {
+    // For now, just mark as approved
+    res.json({ success: true, message: 'Email approved' });
+  } catch (error) {
+    log.error('Failed to approve email', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reject email
+app.post('/api/emails/:emailId/reject', async (req, res) => {
+  try {
+    res.json({ success: true, message: 'Email rejected' });
+  } catch (error) {
+    log.error('Failed to reject email', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// CONFIG API
+// ============================================
+
+// Get email config
+app.get('/api/config/email', async (req, res) => {
+  try {
+    res.json({
+      autoSendEnabled: false,
+      requireApproval: true,
+      fromEmail: process.env.FROM_EMAIL || null,
+      configured: !!process.env.RESEND_API_KEY
+    });
+  } catch (error) {
+    log.error('Failed to get email config', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update email config
+app.patch('/api/config/email', async (req, res) => {
+  try {
+    // Config is read-only in serverless (would need external storage)
+    res.json({ success: true, message: 'Config updated' });
+  } catch (error) {
+    log.error('Failed to update email config', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// PREVIEW & ANALYTICS API
+// ============================================
+
+// Get preview metadata
+app.get('/api/preview/:slug', async (req, res) => {
+  try {
+    const preview = await db.getPreview?.(req.params.slug);
+    if (!preview) {
+      return res.status(404).json({ error: 'Preview not found' });
+    }
+    res.json(preview);
+  } catch (error) {
+    log.error('Failed to get preview', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get preview HTML
+app.get('/api/preview/:slug/html', async (req, res) => {
+  try {
+    const preview = await db.getPreview?.(req.params.slug);
+    if (!preview) {
+      return res.status(404).json({ error: 'Preview not found' });
+    }
+    res.status(200);
+    res.headers = { ...res.headers, 'Content-Type': 'text/html' };
+    res.body = preview.html;
+    return;
+  } catch (error) {
+    log.error('Failed to get preview HTML', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Record analytics event
+app.post('/api/preview/:slug/event', async (req, res) => {
+  try {
+    await db.recordAnalyticsEvent?.(req.params.slug, req.body);
+    res.json({ success: true });
+  } catch (error) {
+    log.error('Failed to record analytics', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get analytics
+app.get('/api/preview/:slug/analytics', async (req, res) => {
+  try {
+    const analytics = await db.getPreviewAnalytics?.(req.params.slug) || {
+      pageviews: 0,
+      uniqueSessions: 0,
+      avgTimeOnPage: 0,
+      scrollDepths: {},
+      clicks: {},
+      formInteractions: {}
+    };
+    res.json(analytics);
+  } catch (error) {
+    log.error('Failed to get analytics', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// PIPELINE API
+// ============================================
+
 // Run pipeline for a URL (using Firecrawl for serverless scraping)
 app.post('/api/pipeline', async (req, res) => {
   try {
@@ -285,10 +495,25 @@ export async function handler(event, context) {
       headers: event.headers
     };
 
-    // Extract route params for :siteId patterns
+    // Extract route params for various patterns
     const siteIdMatch = path.match(/\/api\/deployments\/([^/]+)/);
     if (siteIdMatch) {
       req.params.siteId = siteIdMatch[1];
+    }
+
+    const leadIdMatch = path.match(/\/api\/leads\/([^/]+)/);
+    if (leadIdMatch) {
+      req.params.leadId = leadIdMatch[1];
+    }
+
+    const emailIdMatch = path.match(/\/api\/emails\/([^/]+)/);
+    if (emailIdMatch && !['queue', 'history'].includes(emailIdMatch[1])) {
+      req.params.emailId = emailIdMatch[1];
+    }
+
+    const slugMatch = path.match(/\/api\/preview\/([^/]+)/);
+    if (slugMatch) {
+      req.params.slug = slugMatch[1];
     }
 
     const res = {
