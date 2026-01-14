@@ -303,6 +303,94 @@ app.delete('/api/leads/:leadId', async (req, res) => {
 });
 
 // ============================================
+// DISCOVERY API
+// ============================================
+
+// Discover leads by industry + location
+app.post('/api/discover', async (req, res) => {
+  try {
+    const { query, location, limit = 10 } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required (e.g., "plumbers", "restaurants")' });
+    }
+
+    log.info('Starting lead discovery', { query, location, limit });
+
+    const searchLocation = location || 'Denver, CO';
+    let leads = [];
+
+    // Try LeadFinder (Outscraper) first
+    try {
+      const { default: LeadFinder } = await import('../../src/leadFinder.js');
+      const finder = new LeadFinder();
+      leads = await finder.search(query, searchLocation, parseInt(limit));
+    } catch (err) {
+      log.warn('LeadFinder failed, trying Google Places', { error: err.message });
+
+      // Fallback to Google Places
+      try {
+        const { default: GooglePlacesLeadFinder } = await import('../../src/googlePlaces.js');
+        const places = new GooglePlacesLeadFinder();
+        leads = await places.search(query, searchLocation, { limit: parseInt(limit) });
+      } catch (placesErr) {
+        return res.status(400).json({
+          error: `Discovery failed: ${err.message}`
+        });
+      }
+    }
+
+    // Qualify leads
+    let qualifiedLeads = leads;
+    try {
+      const { LeadQualifier } = await import('../../src/leadQualifier.js');
+      const qualifier = new LeadQualifier({ requireContact: false });
+      qualifiedLeads = leads.map(lead => ({
+        ...lead,
+        qualification: qualifier.qualifyLead(lead)
+      }));
+    } catch (err) {
+      log.warn('Qualification failed', { error: err.message });
+    }
+
+    // Save leads to database
+    const savedLeads = [];
+    for (const lead of qualifiedLeads) {
+      try {
+        const saved = await db.createLead({
+          url: lead.website || lead.url,
+          businessName: lead.name || lead.businessName,
+          email: lead.email,
+          phone: lead.phone,
+          industry: query,
+          country: location,
+          status: 'discovered',
+          score: lead.qualification?.score,
+          qualified: lead.qualification?.qualified
+        });
+        savedLeads.push(saved);
+      } catch (err) {
+        log.debug('Failed to save lead', { error: err.message });
+      }
+    }
+
+    log.info('Discovery complete', { found: leads.length, saved: savedLeads.length });
+
+    res.json({
+      success: true,
+      query,
+      location,
+      found: leads.length,
+      saved: savedLeads.length,
+      leads: savedLeads
+    });
+  } catch (error) {
+    log.error('Discovery error', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
 // EMAIL API
 // ============================================
 
