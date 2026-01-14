@@ -22,6 +22,42 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Diagnostic endpoint to check Firebase status
+app.get('/api/debug/firebase', async (req, res) => {
+  try {
+    const hasProjectId = !!process.env.FIREBASE_PROJECT_ID;
+    const hasClientEmail = !!process.env.FIREBASE_CLIENT_EMAIL;
+    const hasPrivateKey = !!process.env.FIREBASE_PRIVATE_KEY;
+    const privateKeyLength = process.env.FIREBASE_PRIVATE_KEY?.length || 0;
+    const privateKeyStart = process.env.FIREBASE_PRIVATE_KEY?.substring(0, 30) || 'not set';
+
+    let firebaseStatus = 'not initialized';
+    let firebaseError = null;
+
+    try {
+      const enabled = isFirebaseEnabled();
+      firebaseStatus = enabled ? 'enabled' : 'disabled (falling back to local JSON)';
+    } catch (e) {
+      firebaseError = e.message;
+      firebaseStatus = 'error during init';
+    }
+
+    res.json({
+      env: {
+        hasProjectId,
+        hasClientEmail,
+        hasPrivateKey,
+        privateKeyLength,
+        privateKeyStart
+      },
+      firebaseStatus,
+      firebaseError
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API Routes (same as server.js but without static file serving)
 
 // Get all deployments with optional filters
