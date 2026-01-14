@@ -11,7 +11,7 @@ const log = logger.child('db');
 
 // Firebase has a 1MB document size limit - we stay safely under
 const MAX_DOCUMENT_SIZE = 900000; // 900KB to leave margin
-const FIREBASE_TIMEOUT_MS = 30000; // 30 second timeout for Firebase ops
+const FIREBASE_TIMEOUT_MS = 5000; // 5 second timeout - Firebase should be fast
 
 /**
  * Wrap a promise with a timeout
@@ -30,6 +30,22 @@ function withTimeout(promise, ms, operation = 'Firebase operation') {
  */
 function estimateSize(obj) {
   return Buffer.byteLength(JSON.stringify(obj), 'utf8');
+}
+
+/**
+ * Timed Firebase write with logging for diagnostics
+ */
+async function timedFirebaseWrite(operation, label, docSize = null) {
+  const start = Date.now();
+  const sizeInfo = docSize ? ` (${Math.round(docSize/1024)}KB)` : '';
+  log.debug(`Firebase: ${label}${sizeInfo}`);
+  try {
+    await withTimeout(operation, FIREBASE_TIMEOUT_MS, label);
+    log.debug(`Firebase: ${label} done in ${Date.now() - start}ms`);
+  } catch (err) {
+    log.error(`Firebase: ${label} FAILED after ${Date.now() - start}ms`, { error: err.message });
+    throw err;
+  }
 }
 
 // ==================== LOCAL JSON STORAGE ====================
@@ -281,8 +297,10 @@ export async function saveDeployment(data) {
   if (isFirebaseEnabled()) {
     const db = getFirestore();
     const deploymentId = data.siteId || `deploy_${Date.now()}`;
-    await db.collection(COLLECTIONS.DEPLOYMENTS).doc(deploymentId).set(deployment);
-    log.debug('Deployment saved to Firebase', { siteId: data.siteId });
+    await timedFirebaseWrite(
+      db.collection(COLLECTIONS.DEPLOYMENTS).doc(deploymentId).set(deployment),
+      `saveDeployment(${data.siteId})`
+    );
   } else {
     const localDb = await loadLocalDb();
     localDb.deployments = localDb.deployments || [];
@@ -873,13 +891,12 @@ export async function createPreview(data) {
       }
     }
 
-    // Add timeout to prevent hanging forever
-    await withTimeout(
+    // Save with timeout and logging
+    await timedFirebaseWrite(
       db.collection('previews').doc(previewId).set(docToSave),
-      FIREBASE_TIMEOUT_MS,
-      'Firebase preview save'
+      `createPreview(${data.slug})`,
+      size
     );
-    log.info('Preview created in Firebase', { previewId, slug: data.slug, size: Math.round(size/1024) + 'KB' });
   } else {
     const localDb = await loadLocalDb();
     localDb.previews = localDb.previews || [];
