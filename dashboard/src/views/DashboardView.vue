@@ -843,7 +843,23 @@ async function handleNewLead() {
       skipEmail: skipEmail.value
     });
 
-    // Store job ID for SSE subscription
+    console.log('[Pipeline] Response:', response);
+
+    // Check if pipeline completed synchronously (has preview URL)
+    if (response && response.success && response.preview) {
+      // Pipeline completed! Show success
+      pipelineProgress.value.stageIndex = 3; // Complete
+      pipelineProgress.value.percent = 100;
+      pipelineProgress.value.previewUrl = response.preview;
+      showToast(`Preview ready: ${response.businessName || 'Site'}`, 'success');
+      stopProgress();
+      newLeadUrl.value = '';
+      // Refresh data to show new preview
+      await fetchData();
+      return;
+    }
+
+    // Store job ID for SSE subscription (async job flow)
     if (response && response.jobId) {
       pipelineProgress.value.jobId = response.jobId;
       // Subscribe to real-time status updates via SSE
@@ -862,6 +878,7 @@ async function handleNewLead() {
     showToast('Pipeline started! Processing your lead...', 'success');
 
   } catch (err) {
+    console.error('[Pipeline] Error:', err);
     pipelineProgress.value.error = err.message;
     showToast(err.message, 'error');
     stopProgress();
