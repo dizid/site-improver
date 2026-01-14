@@ -475,9 +475,13 @@ app.post('/api/pipeline', async (req, res) => {
     );
 
     const pipelineWork = async () => {
+    const startTime = Date.now();
+    const timing = (step) => log.info(`[TIMING] ${step}: ${Date.now() - startTime}ms`);
+
     // 1. Scrape with Firecrawl
     log.info('Scraping site with Firecrawl...');
     const siteData = await scrapeSiteLite(url);
+    timing('Scrape complete');
 
     // 2. Build template
     log.info('Building template...');
@@ -485,17 +489,21 @@ app.post('/api/pipeline', async (req, res) => {
     await builder.init();
     const { slots, industry } = await builder.build(siteData);
     siteData.industry = industry;
+    timing('Build complete');
 
-    // 3. AI Polish (if API key available)
+    // 3. AI Polish - DISABLED to reduce pipeline time (10s Netlify limit)
+    // TODO: Re-enable with background function for longer timeout
     let polishedSlots = slots;
-    if (process.env.ANTHROPIC_API_KEY) {
-      log.info('Polishing with AI...');
-      const polisher = new AIPolisher();
-      polishedSlots = await polisher.polishAll(slots, siteData);
-    }
+    // if (process.env.ANTHROPIC_API_KEY) {
+    //   log.info('Polishing with AI...');
+    //   const polisher = new AIPolisher();
+    //   polishedSlots = await polisher.polishAll(slots, siteData);
+    // }
+    timing('Polish skipped');
 
     // 4. Generate final HTML
     const finalHtml = await builder.buildWithSlots(siteData, polishedSlots);
+    timing('HTML generated');
 
     // 5. Generate slug and save to database
     const slug = crypto.randomBytes(8).toString('hex');
@@ -519,8 +527,11 @@ app.post('/api/pipeline', async (req, res) => {
       status: 'complete'
     });
 
+    timing('Save complete');
+
     const previewUrl = `/preview/${slug}`;
-    log.info('Pipeline complete', { preview: previewUrl, firebaseEnabled: isFirebaseEnabled() });
+    timing('Pipeline complete');
+    log.info('Pipeline complete', { preview: previewUrl, firebaseEnabled: isFirebaseEnabled(), totalMs: Date.now() - startTime });
 
     return {
       success: true,
