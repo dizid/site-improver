@@ -833,7 +833,7 @@ export class TemplateBuilder {
     // Get hero image for fullwidth variant background
     const heroImage = siteData.images?.[0]?.src || '';
     const heroStyle = variant.heroLayout === 'fullwidth' && heroImage
-      ? `style="background-image: url('${heroImage}');"`
+      ? `style="--hero-bg-image: url('${heroImage}')"`
       : '';
 
     // Add variant class to body for additional styling hooks
