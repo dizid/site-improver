@@ -152,8 +152,49 @@ const FALLBACK_SERVICES = {
 };
 
 /**
- * Industry-specific "Why Choose Us" points
+ * Industry-specific section titles
  */
+const SECTION_TITLES = {
+  testimonials: {
+    plumber: 'What Homeowners Say',
+    electrician: 'What Homeowners Say',
+    hvac: 'What Homeowners Say',
+    roofing: 'What Homeowners Say',
+    lawyer: 'What Our Clients Say',
+    dentist: 'Patient Reviews',
+    'real-estate': 'Client Success Stories',
+    restaurant: 'What Diners Are Saying',
+    auto: 'Customer Reviews',
+    cleaning: 'Happy Customers',
+    insurance: 'Client Testimonials',
+    accountant: 'What Our Clients Say',
+    salon: 'Happy Clients',
+    gym: 'Member Success Stories',
+    landscaping: 'What Homeowners Say',
+    'home-services': 'What Homeowners Say',
+    general: 'What Our Customers Say'
+  },
+  whyUs: {
+    plumber: 'Why Homeowners Trust Us',
+    electrician: 'Why Homeowners Trust Us',
+    hvac: 'Why Homeowners Trust Us',
+    roofing: 'Why Homeowners Trust Us',
+    lawyer: 'Why Clients Choose Us',
+    dentist: 'Why Patients Choose Us',
+    'real-estate': 'Why Clients Choose Us',
+    restaurant: 'Why Diners Love Us',
+    auto: 'Why Drivers Trust Us',
+    cleaning: 'Why We Stand Out',
+    insurance: 'Why Clients Trust Us',
+    accountant: 'Why Clients Choose Us',
+    salon: 'Why Clients Love Us',
+    gym: 'Why Members Choose Us',
+    landscaping: 'Why Homeowners Trust Us',
+    'home-services': 'Why Homeowners Trust Us',
+    general: 'Why Choose Us'
+  }
+};
+
 const FALLBACK_WHY_US = {
   plumber: [
     { title: 'Licensed & Insured', description: 'Full protection for you and your property', icon: 'shield' },
@@ -270,9 +311,11 @@ export function resolveSmartFallbacks(siteData, industry = 'general') {
     services,
     why_us_points: whyUs,
 
-    // Section headers
+    // Section headers (industry-adaptive)
     section_services: `Our ${normalizedIndustry === 'general' ? '' : normalizedIndustry.charAt(0).toUpperCase() + normalizedIndustry.slice(1) + ' '}Services`,
     services_subtitle: content.benefits?.[1] || 'Professional service tailored to your needs',
+    section_why_us: SECTION_TITLES.whyUs[normalizedIndustry] || SECTION_TITLES.whyUs.general,
+    testimonials_title: SECTION_TITLES.testimonials[normalizedIndustry] || SECTION_TITLES.testimonials.general,
     section_contact: 'Get in Touch',
     cta_help: 'Have questions? We\'re here to help.',
     cta_ready: 'Ready to get started?',

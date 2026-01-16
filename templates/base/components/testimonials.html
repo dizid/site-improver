@@ -1,7 +1,7 @@
-<!-- Testimonials: Warm background with friendly quotes -->
+<!-- Testimonials: Industry-adaptive quotes section -->
 <section id="testimonials" class="testimonials-section">
   <div class="container">
-    <h2>What Our Neighbors Say</h2>
+    <h2>{{testimonials_title}}</h2>
 
     <!-- Testimonial cards with glassmorphism effect -->
     <div class="testimonials-grid">
@@ -11,17 +11,6 @@
           <cite>— {{this.author}}</cite>
         </blockquote>
       {{/each}}
-
-      {{#unless testimonials}}
-        <blockquote class="testimonial">
-          <p>Wonderful experience from start to finish! They really care about their customers.</p>
-          <cite>— A Happy Neighbor</cite>
-        </blockquote>
-        <blockquote class="testimonial">
-          <p>Finally found a business that treats you like family. Highly recommend!</p>
-          <cite>— Local Customer</cite>
-        </blockquote>
-      {{/unless}}
     </div>
   </div>
 </section>

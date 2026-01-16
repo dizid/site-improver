@@ -697,6 +697,7 @@ export class TemplateBuilder {
     slots.heroVariant = variant.heroLayout; // 'split', 'centered', 'fullwidth', 'asymmetric'
     slots.cardStyle = variant.cardStyle;
     slots.variantName = variantName;
+    slots.year = new Date().getFullYear();
 
     // Build HTML from sections
     const sections = (config.sections || []).map(section => {

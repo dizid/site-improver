@@ -7,6 +7,98 @@ import { getIndustryContent, getRandomUSPs, getRandomBenefits } from './industry
 
 const log = logger.child('aiPolish');
 
+/**
+ * Industry-specific testimonial templates
+ * Each industry has 3-4 authentic-sounding testimonials
+ */
+const TESTIMONIAL_TEMPLATES = {
+  plumber: [
+    { text: 'Called at 2am with a burst pipe - they were here in 30 minutes. Saved our basement!', author: 'Mike R.', rating: 5 },
+    { text: 'Finally a plumber who shows up on time and charges fair prices. Will call again.', author: 'Jennifer S.', rating: 5 },
+    { text: 'Fixed our water heater same day. Professional, clean, and explained everything.', author: 'Robert T.', rating: 5 }
+  ],
+  electrician: [
+    { text: 'Rewired our whole panel safely and passed inspection first try. Excellent work.', author: 'David K.', rating: 5 },
+    { text: 'Fixed a tricky outlet issue that two other electricians couldn\'t figure out.', author: 'Patricia M.', rating: 5 },
+    { text: 'Installed recessed lighting throughout our home. Looks amazing!', author: 'Chris L.', rating: 5 }
+  ],
+  hvac: [
+    { text: 'AC died during a heat wave - they came out same day and got us cool again.', author: 'The Martinez Family', rating: 5 },
+    { text: 'Honest assessment saved us thousands. Didn\'t try to upsell us on a new unit.', author: 'Karen W.', rating: 5 },
+    { text: 'Maintenance plan keeps our system running perfectly. Highly recommend.', author: 'James H.', rating: 5 }
+  ],
+  roofing: [
+    { text: 'After the storm, they were the only company that could come out within a week.', author: 'Bill & Susan T.', rating: 5 },
+    { text: 'New roof looks fantastic and the cleanup was spotless. Very professional crew.', author: 'Linda P.', rating: 5 },
+    { text: 'Helped us navigate the insurance claim process. Made it so much easier.', author: 'Frank M.', rating: 5 }
+  ],
+  lawyer: [
+    { text: 'Made a stressful situation manageable. Clear communication throughout the case.', author: 'David M.', rating: 5 },
+    { text: 'They fought hard and got a better settlement than I ever expected.', author: 'Lisa K.', rating: 5 },
+    { text: 'Responsive, knowledgeable, and actually cared about my situation.', author: 'Amanda P.', rating: 5 }
+  ],
+  dentist: [
+    { text: 'First dentist that doesn\'t make me anxious. Gentle and patient with nervous patients.', author: 'Susan W.', rating: 5 },
+    { text: 'Great with kids! My son actually looks forward to his checkups now.', author: 'The Miller Family', rating: 5 },
+    { text: 'Modern office, friendly staff, and they always run on time.', author: 'Tom B.', rating: 5 }
+  ],
+  'real-estate': [
+    { text: 'Found us our dream home in a competitive market. Her negotiation skills are incredible.', author: 'The Johnson Family', rating: 5 },
+    { text: 'Sold our house above asking in just 5 days. Couldn\'t believe it!', author: 'Maria G.', rating: 5 },
+    { text: 'Patient and knowledgeable - answered all our first-time buyer questions.', author: 'Alex & Sam R.', rating: 5 }
+  ],
+  restaurant: [
+    { text: 'Best food in town! We come here every weekend now. Try the special!', author: 'The Garcia Family', rating: 5 },
+    { text: 'Fresh ingredients, friendly staff, and the atmosphere is perfect for date night.', author: 'Sarah T.', rating: 5 },
+    { text: 'They catered our company event and everyone was raving about the food.', author: 'Michael K.', rating: 5 }
+  ],
+  auto: [
+    { text: 'Honest mechanics are hard to find - these guys are the real deal. Fair prices too.', author: 'Steve B.', rating: 5 },
+    { text: 'Diagnosed the problem when the dealership couldn\'t. Saved me hundreds.', author: 'Nancy H.', rating: 5 },
+    { text: 'Fast service and they always explain what they\'re doing. No surprises.', author: 'Tony M.', rating: 5 }
+  ],
+  cleaning: [
+    { text: 'My house has never been this clean! Worth every penny.', author: 'Jennifer L.', rating: 5 },
+    { text: 'Reliable, thorough, and trustworthy. Same great team every time.', author: 'Rebecca S.', rating: 5 },
+    { text: 'They got stains out of our carpet that I thought were permanent.', author: 'Mark D.', rating: 5 }
+  ],
+  insurance: [
+    { text: 'Saved us $200/month by reviewing our policies. Should have called sooner!', author: 'The Williams Family', rating: 5 },
+    { text: 'When we had a claim, they handled everything. No stress at all.', author: 'Karen B.', rating: 5 },
+    { text: 'Takes time to explain coverage options without the pushy sales tactics.', author: 'Richard P.', rating: 5 }
+  ],
+  accountant: [
+    { text: 'Found deductions I never knew existed. Paid for themselves many times over.', author: 'Small Business Owner', rating: 5 },
+    { text: 'Finally understand my business finances. Their quarterly reviews are invaluable.', author: 'Sarah M.', rating: 5 },
+    { text: 'Responsive during tax season when I needed answers fast.', author: 'David L.', rating: 5 }
+  ],
+  salon: [
+    { text: 'Best haircut I\'ve ever had! Finally found my go-to stylist.', author: 'Amanda K.', rating: 5 },
+    { text: 'The color came out exactly like the photo I showed them. So happy!', author: 'Michelle T.', rating: 5 },
+    { text: 'Relaxing atmosphere and the whole team is so talented.', author: 'Jessica R.', rating: 5 }
+  ],
+  gym: [
+    { text: 'Lost 30 pounds in 4 months! The trainers really know what they\'re doing.', author: 'Mike J.', rating: 5 },
+    { text: 'Clean facility, great equipment, and actually affordable. No hidden fees.', author: 'Sarah P.', rating: 5 },
+    { text: 'The group classes keep me motivated. Love the community here.', author: 'Lisa H.', rating: 5 }
+  ],
+  landscaping: [
+    { text: 'Transformed our backyard into an oasis. We get compliments all the time!', author: 'The Chen Family', rating: 5 },
+    { text: 'Reliable lawn service every week. Yard always looks perfect.', author: 'Tom S.', rating: 5 },
+    { text: 'They designed and installed our patio. Exceeded our expectations.', author: 'Nancy M.', rating: 5 }
+  ],
+  'home-services': [
+    { text: 'Fixed multiple issues in one visit. Knowledgeable and efficient.', author: 'Robert K.', rating: 5 },
+    { text: 'On time, fair pricing, and quality work. What more could you ask for?', author: 'Sandra L.', rating: 5 },
+    { text: 'Have used them three times now. Consistently great experience.', author: 'Paul W.', rating: 5 }
+  ],
+  general: [
+    { text: 'Excellent service from start to finish. They exceeded our expectations.', author: 'Sarah M.', rating: 5 },
+    { text: 'Professional, reliable, and fairly priced. Will definitely use again.', author: 'Tom W.', rating: 5 },
+    { text: 'Would recommend to friends and family without hesitation.', author: 'Jennifer L.', rating: 5 }
+  ]
+};
+
 export class AIPolisher {
   constructor(apiKey) {
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
@@ -417,17 +509,14 @@ Return as JSON array:
   }
 
   /**
-   * Get fallback testimonials using industry content
+   * Get fallback testimonials using industry-specific templates
    */
   getFallbackTestimonials(siteData) {
-    const benefits = getRandomBenefits(siteData.industry || 'general', 3);
-    const names = ['Sarah', 'Michael', 'Jennifer'];
+    const industry = siteData.industry || 'general';
+    const templates = TESTIMONIAL_TEMPLATES[industry] || TESTIMONIAL_TEMPLATES.general;
 
-    return benefits.map((benefit, i) => ({
-      text: `${benefit}. Highly recommend!`,
-      author: names[i],
-      rating: 5
-    }));
+    // Return a copy to avoid mutating the original templates
+    return templates.map(t => ({ ...t }));
   }
 
   /**
