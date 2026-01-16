@@ -1,0 +1,53 @@
+{
+  "id": "accountant",
+  "name": "Accounting",
+  "keywords": ["accountant", "accounting", "cpa", "bookkeeper", "bookkeeping", "tax", "taxes", "payroll", "audit", "financial", "tax preparation"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Financial Clarity, Peace of Mind",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Expert accounting and tax services for individuals and businesses",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Schedule Consultation"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Services"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#1e3a5f",
+      "secondary": "#475569",
+      "accent": "#c9a227"
+    }
+  }
+}

@@ -765,6 +765,247 @@ img {
 }
 
 /* -----------------------------------------------------------------------------
+   Hero Variants - Industry-Adaptive Layouts
+   ----------------------------------------------------------------------------- */
+
+/* SPLIT HERO (default) - Image on right, text on left
+   Used by: retail, home-services, general */
+.hero--split .container {
+  /* Already the default layout */
+}
+
+/* FULLWIDTH HERO - Full viewport background image with overlay
+   Used by: restaurant, plumber, electrician, hvac, roofing, auto, gym, landscaping */
+.hero--fullwidth {
+  min-height: 75vh;
+  background-size: cover;
+  background-position: center;
+  background-image: var(--hero-bg-image);
+  position: relative;
+  padding: 0;
+}
+
+.hero--fullwidth::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.4) 100%);
+  z-index: 1;
+}
+
+.hero--fullwidth::after {
+  display: none;
+}
+
+.hero--fullwidth .container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 75vh;
+  position: relative;
+  z-index: 2;
+  padding: var(--space-xl) var(--space-md);
+}
+
+@media (min-width: 768px) {
+  .hero--fullwidth {
+    min-height: 85vh;
+  }
+
+  .hero--fullwidth .container {
+    min-height: 85vh;
+    padding: var(--space-2xl);
+  }
+}
+
+.hero--fullwidth .hero-content {
+  text-align: center;
+  order: 1;
+  max-width: 900px;
+}
+
+.hero--fullwidth .hero-content h1 {
+  font-size: clamp(2rem, 8vw, 4.5rem);
+  color: white;
+  text-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  margin-bottom: var(--space-md);
+}
+
+.hero--fullwidth .hero-content p {
+  color: rgba(255,255,255,0.9);
+  font-size: clamp(1.1rem, 3vw, 1.4rem);
+  max-width: 700px;
+  margin: 0 auto var(--space-lg);
+}
+
+.hero--fullwidth .hero-badge {
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+}
+
+.hero--fullwidth .hero-badge .badge-icon {
+  color: var(--color-accent);
+}
+
+.hero--fullwidth .hero-buttons {
+  justify-content: center;
+}
+
+.hero--fullwidth .hero-trust {
+  justify-content: center;
+}
+
+.hero--fullwidth .trust-text {
+  color: rgba(255,255,255,0.8);
+}
+
+.hero--fullwidth .hero-image {
+  display: none;
+}
+
+/* Fallback gradient when no image */
+.hero--fullwidth:not([style*="--hero-bg-image"]) {
+  background: var(--gradient-primary);
+}
+
+/* CENTERED HERO - Centered text with image below
+   Used by: dentist, real-estate, insurance, cleaning, salon */
+.hero--centered .container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-xl);
+}
+
+@media (min-width: 768px) {
+  .hero--centered .container {
+    gap: var(--space-2xl);
+  }
+}
+
+.hero--centered .hero-content {
+  order: 1;
+  text-align: center;
+  max-width: 800px;
+}
+
+.hero--centered .hero-content h1 {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+}
+
+.hero--centered .hero-content p {
+  max-width: 650px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.hero--centered .hero-buttons {
+  justify-content: center;
+}
+
+.hero--centered .hero-trust {
+  justify-content: center;
+}
+
+.hero--centered .hero-image {
+  order: 2;
+  max-width: 700px;
+}
+
+@media (min-width: 768px) {
+  .hero--centered .hero-image {
+    max-width: 600px;
+  }
+}
+
+/* ASYMMETRIC HERO - Offset layout with elegant proportions
+   Used by: lawyer, accountant */
+.hero--asymmetric {
+  padding: var(--space-2xl) 0 var(--space-xl);
+}
+
+@media (min-width: 768px) {
+  .hero--asymmetric {
+    padding: var(--space-3xl) 0 var(--space-2xl);
+  }
+}
+
+.hero--asymmetric .container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-xl);
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .hero--asymmetric .container {
+    grid-template-columns: 1.4fr 0.6fr;
+    gap: var(--space-2xl);
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero--asymmetric .container {
+    grid-template-columns: 1.3fr 0.7fr;
+    gap: 6rem;
+  }
+}
+
+.hero--asymmetric .hero-content {
+  order: 2;
+}
+
+@media (min-width: 768px) {
+  .hero--asymmetric .hero-content {
+    order: 1;
+    text-align: left;
+  }
+}
+
+.hero--asymmetric .hero-content h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.hero--asymmetric .hero-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  background: transparent;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+}
+
+.hero--asymmetric .hero-image {
+  order: 1;
+}
+
+@media (min-width: 768px) {
+  .hero--asymmetric .hero-image {
+    order: 2;
+    transform: translateY(2rem);
+  }
+}
+
+.hero--asymmetric .hero-image img {
+  border-radius: var(--radius-md);
+  box-shadow: -20px 20px 60px rgba(0,0,0,0.15);
+  border: none;
+}
+
+@media (min-width: 768px) {
+  .hero--asymmetric .hero-image::before {
+    display: none;
+  }
+}
+
+/* -----------------------------------------------------------------------------
    Buttons - Modern with Gradients
    ----------------------------------------------------------------------------- */
 .btn-primary {
@@ -1039,6 +1280,102 @@ img {
   .service-card p {
     font-size: 0.95rem;
   }
+}
+
+/* -----------------------------------------------------------------------------
+   Service Card Variants - Industry-Adaptive Styles
+   ----------------------------------------------------------------------------- */
+
+/* ELEVATED cards (default) - Shadows and hover lift
+   Used by: classic, bold industries with cardStyle: elevated */
+/* Already the default styling above */
+
+/* SOLID cards - Primary color background
+   Used by: bold variant (restaurant, plumber, etc.) */
+.hero--fullwidth ~ * .service-card,
+.card-style-solid .service-card {
+  background: var(--color-primary);
+  border: none;
+  color: white;
+}
+
+.hero--fullwidth ~ * .service-card h3,
+.card-style-solid .service-card h3 {
+  color: white;
+}
+
+.hero--fullwidth ~ * .service-card p,
+.card-style-solid .service-card p {
+  color: rgba(255,255,255,0.85);
+}
+
+.hero--fullwidth ~ * .service-icon,
+.card-style-solid .service-icon {
+  background: rgba(255,255,255,0.2);
+  color: white;
+}
+
+.hero--fullwidth ~ * .service-card:hover .service-icon,
+.card-style-solid .service-card:hover .service-icon {
+  background: white;
+  color: var(--color-primary);
+}
+
+.hero--fullwidth ~ * .service-card::before,
+.card-style-solid .service-card::before {
+  background: linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 100%);
+}
+
+/* OUTLINED cards - Border only, transparent background
+   Used by: elegant variant (lawyer, accountant) */
+.hero--asymmetric ~ * .service-card,
+.card-style-outlined .service-card {
+  background: transparent;
+  border: 2px solid var(--color-surface-warm);
+  box-shadow: none;
+}
+
+.hero--asymmetric ~ * .service-card:hover,
+.card-style-outlined .service-card:hover {
+  border-color: var(--color-primary);
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.hero--asymmetric ~ * .service-card::before,
+.card-style-outlined .service-card::before {
+  display: none;
+}
+
+.hero--asymmetric ~ * .service-icon,
+.card-style-outlined .service-icon {
+  background: var(--color-surface);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* FLAT cards - Subtle background, no shadows
+   Used by: minimal variant (dentist, real-estate, cleaning, salon) */
+.hero--centered ~ * .service-card,
+.card-style-flat .service-card {
+  background: var(--color-surface);
+  border: none;
+  box-shadow: none;
+}
+
+.hero--centered ~ * .service-card:hover,
+.card-style-flat .service-card:hover {
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.hero--centered ~ * .service-card::before,
+.card-style-flat .service-card::before {
+  display: none;
+}
+
+/* Featured card treatment - First card gets emphasis */
+.service-card:first-child {
+  /* Optional: Could add special styling for the first card */
 }
 
 /* -----------------------------------------------------------------------------
@@ -1332,6 +1669,73 @@ img {
   font-weight: 600;
   display: block;
   color: white;
+}
+
+/* -----------------------------------------------------------------------------
+   Testimonials Variants - Industry-Adaptive
+   ----------------------------------------------------------------------------- */
+
+/* ELEGANT variant testimonials - subtle gold accents
+   Used by: lawyer, accountant */
+.hero--asymmetric ~ .testimonials-section {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+.hero--asymmetric ~ .testimonials-section .testimonial {
+  border-color: rgba(201, 162, 39, 0.2);
+}
+
+.hero--asymmetric ~ .testimonials-section .testimonial p::before {
+  color: #c9a227;
+}
+
+/* MINIMAL variant testimonials - light background
+   Used by: dentist, real-estate, insurance, cleaning, salon */
+.hero--centered ~ .testimonials-section {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.hero--centered ~ .testimonials-section h2 {
+  color: var(--color-text);
+}
+
+.hero--centered ~ .testimonials-section .testimonial {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  backdrop-filter: none;
+}
+
+.hero--centered ~ .testimonials-section .testimonial p {
+  color: var(--color-text-light);
+}
+
+.hero--centered ~ .testimonials-section .testimonial cite {
+  color: var(--color-text);
+}
+
+.hero--centered ~ .testimonials-section::before,
+.hero--centered ~ .testimonials-section::after {
+  opacity: 0.5;
+}
+
+/* BOLD variant testimonials - primary color background
+   Used by: restaurant, plumber, electrician, hvac, roofing, auto, gym */
+.hero--fullwidth ~ .testimonials-section {
+  background: var(--color-primary);
+}
+
+.hero--fullwidth ~ .testimonials-section::before {
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+}
+
+.hero--fullwidth ~ .testimonials-section::after {
+  background: radial-gradient(circle, rgba(0,0,0,0.15) 0%, transparent 70%);
+}
+
+.hero--fullwidth ~ .testimonials-section .testimonial {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.15);
 }
 
 /* -----------------------------------------------------------------------------
@@ -1862,12 +2266,15 @@ img {
 }
 
 /* -----------------------------------------------------------------------------
-   Scroll Animations
+   Scroll Animations - Enhanced
    ----------------------------------------------------------------------------- */
+
+/* Fade in up - default scroll animation */
 .fade-in-up {
   opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
+  transform: translateY(30px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .fade-in-up.visible {
@@ -1875,13 +2282,80 @@ img {
   transform: translateY(0);
 }
 
+/* Slide up - more dramatic for hero elements */
+.slide-up {
+  opacity: 0;
+  transform: translateY(50px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Scale in - for hero content */
+.scale-in {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.scale-in.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Fade in only (no movement) */
+.fade-in {
+  opacity: 0;
+  transition: opacity 0.6s ease-out;
+}
+
+.fade-in.visible {
+  opacity: 1;
+}
+
 /* Staggered animation delays for grid items */
-.fade-in-up:nth-child(1) { transition-delay: 0s; }
-.fade-in-up:nth-child(2) { transition-delay: 0.1s; }
-.fade-in-up:nth-child(3) { transition-delay: 0.2s; }
-.fade-in-up:nth-child(4) { transition-delay: 0.3s; }
-.fade-in-up:nth-child(5) { transition-delay: 0.4s; }
-.fade-in-up:nth-child(6) { transition-delay: 0.5s; }
+.fade-in-up:nth-child(1), .slide-up:nth-child(1) { transition-delay: 0s; }
+.fade-in-up:nth-child(2), .slide-up:nth-child(2) { transition-delay: 0.1s; }
+.fade-in-up:nth-child(3), .slide-up:nth-child(3) { transition-delay: 0.15s; }
+.fade-in-up:nth-child(4), .slide-up:nth-child(4) { transition-delay: 0.2s; }
+.fade-in-up:nth-child(5), .slide-up:nth-child(5) { transition-delay: 0.25s; }
+.fade-in-up:nth-child(6), .slide-up:nth-child(6) { transition-delay: 0.3s; }
+
+/* Explicit stagger classes */
+.stagger-1 { transition-delay: 0.1s; }
+.stagger-2 { transition-delay: 0.2s; }
+.stagger-3 { transition-delay: 0.3s; }
+.stagger-4 { transition-delay: 0.4s; }
+.stagger-5 { transition-delay: 0.5s; }
+
+/* Hero-specific animations */
+.hero .hero-content {
+  opacity: 0;
+  transform: translateY(30px);
+  animation: heroFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+}
+
+.hero .hero-image {
+  opacity: 0;
+  transform: translateY(30px);
+  animation: heroFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.4s forwards;
+}
+
+@keyframes heroFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Parallax effect for hero image (applied via JS) */
+.hero-image.parallax img {
+  transition: transform 0.1s linear;
+}
 
 /* CTA button pulse effect */
 @keyframes cta-pulse {

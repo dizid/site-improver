@@ -7,6 +7,7 @@ import CleanCSS from 'clean-css';
 import logger from './logger.js';
 import { ICONS, getIcon, detectIcon } from '../templates/base/icons.js';
 import { resolveSmartFallbacks, isEmptyOrPlaceholder } from './smartFallbacks.js';
+import { INDUSTRY_KEYWORDS, SCHEMA_TO_INDUSTRY, SIGNAL_WEIGHTS, CONFIDENCE_THRESHOLDS } from './industryKeywords.js';
 
 const log = logger.child('templateBuilder');
 
@@ -46,14 +47,30 @@ const FONT_PAIRINGS = {
 
 // Map industries to font pairings
 const INDUSTRY_FONTS = {
+  // Professional/Elegant industries
   lawyer: 'elegant',
+  accountant: 'elegant',
+  insurance: 'professional',
   'real-estate': 'professional',
-  restaurant: 'friendly',
-  retail: 'friendly',
+  dentist: 'professional',
+
+  // Bold/Strong industries (trades)
   plumber: 'bold',
   electrician: 'bold',
+  hvac: 'bold',
+  roofing: 'bold',
+  auto: 'bold',
+  gym: 'bold',
   'home-services': 'bold',
-  dentist: 'professional',
+
+  // Friendly/Approachable industries
+  restaurant: 'friendly',
+  retail: 'friendly',
+  salon: 'friendly',
+  cleaning: 'friendly',
+  landscaping: 'friendly',
+
+  // Default
   general: 'modern'
 };
 
@@ -95,14 +112,30 @@ const LAYOUT_VARIANTS = {
 
 // Map industries to layout variants
 const INDUSTRY_VARIANTS = {
+  // Elegant: Asymmetric hero, outlined cards, luxurious spacing
   lawyer: 'elegant',
+  accountant: 'elegant',
+
+  // Minimal: Centered hero, flat cards, relaxed spacing
   'real-estate': 'minimal',
+  dentist: 'minimal',
+  insurance: 'minimal',
+  cleaning: 'minimal',
+  salon: 'minimal',
+
+  // Bold: Fullwidth hero, solid cards, compact spacing
   restaurant: 'bold',
-  retail: 'classic',
   plumber: 'bold',
   electrician: 'bold',
+  hvac: 'bold',
+  roofing: 'bold',
+  auto: 'bold',
+  gym: 'bold',
+  landscaping: 'bold',
+
+  // Classic: Split hero, elevated cards, normal spacing
+  retail: 'classic',
   'home-services': 'classic',
-  dentist: 'minimal',
   general: 'classic'
 };
 
@@ -199,25 +232,173 @@ export class TemplateBuilder {
     this.initialized = true;
   }
 
+  /**
+   * Detect industry using multi-signal weighted scoring
+   * Returns { industry, confidence, signals } for informed template decisions
+   */
   detectIndustry(siteData) {
-    const text = [
-      siteData.businessName || '',
-      ...(siteData.headlines || []),
-      ...(siteData.paragraphs || []),
-      siteData.title || '',
-      siteData.description || ''
-    ].join(' ').toLowerCase();
+    const scores = {};
+    const signalLog = {};
 
-    let bestMatch = { industry: 'general', score: 0 };
+    // Prepare text sources for analysis
+    const businessName = (siteData.businessName || '').toLowerCase();
+    const url = (siteData.url || siteData.original || '').toLowerCase();
+    const headlines = (siteData.headlines || []).join(' ').toLowerCase();
+    const title = (siteData.title || '').toLowerCase();
+    const description = (siteData.description || '').toLowerCase();
+    const paragraphs = (siteData.paragraphs || []).join(' ').toLowerCase();
+    const services = (siteData.services || []).map(s =>
+      typeof s === 'string' ? s : s.name || s.title || ''
+    ).join(' ').toLowerCase();
 
-    for (const [industry, config] of Object.entries(this.industryConfigs)) {
-      const matches = (config.keywords || []).filter(kw => text.includes(kw.toLowerCase()));
-      if (matches.length > bestMatch.score) {
-        bestMatch = { industry, score: matches.length };
+    // Extract domain from URL
+    let domain = '';
+    try {
+      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      domain = urlObj.hostname.replace('www.', '').split('.')[0];
+    } catch (e) {
+      domain = url.replace(/^https?:\/\//, '').replace('www.', '').split(/[./]/)[0];
+    }
+
+    // Initialize scores for all industries
+    for (const industry of Object.keys(INDUSTRY_KEYWORDS)) {
+      scores[industry] = 0;
+      signalLog[industry] = [];
+    }
+
+    // 1. Schema.org signals (highest weight - 3x)
+    const schemaType = this.extractSchemaType(siteData);
+    if (schemaType && SCHEMA_TO_INDUSTRY[schemaType]) {
+      const industry = SCHEMA_TO_INDUSTRY[schemaType];
+      scores[industry] += SIGNAL_WEIGHTS.schemaType;
+      signalLog[industry].push(`schema:${schemaType}`);
+    }
+
+    // 2. Check each industry's keywords
+    for (const [industry, config] of Object.entries(INDUSTRY_KEYWORDS)) {
+      if (industry === 'general') continue;
+
+      // Check for negative keywords first (strong penalty)
+      for (const negative of config.negative || []) {
+        const negLower = negative.toLowerCase();
+        if (paragraphs.includes(negLower) || headlines.includes(negLower)) {
+          scores[industry] += SIGNAL_WEIGHTS.negativeKeyword;
+          signalLog[industry].push(`negative:${negative}`);
+        }
+      }
+
+      // Business name signals (2x weight)
+      for (const keyword of config.primary || []) {
+        if (businessName.includes(keyword.toLowerCase())) {
+          scores[industry] += SIGNAL_WEIGHTS.businessName;
+          signalLog[industry].push(`name:${keyword}`);
+        }
+      }
+
+      // URL/Domain signals (2x weight)
+      for (const pattern of config.urlPatterns || []) {
+        if (domain.includes(pattern.toLowerCase())) {
+          scores[industry] += SIGNAL_WEIGHTS.urlDomain;
+          signalLog[industry].push(`url:${pattern}`);
+        }
+      }
+
+      // Primary keywords in headlines/title (1.5x weight)
+      for (const keyword of config.primary || []) {
+        const kwLower = keyword.toLowerCase();
+        if (headlines.includes(kwLower) || title.includes(kwLower)) {
+          scores[industry] += SIGNAL_WEIGHTS.headlineKeyword;
+          signalLog[industry].push(`headline:${keyword}`);
+        }
+      }
+
+      // Primary keywords in services (1.5x weight)
+      for (const keyword of config.primary || []) {
+        if (services.includes(keyword.toLowerCase())) {
+          scores[industry] += SIGNAL_WEIGHTS.serviceKeyword;
+          signalLog[industry].push(`service:${keyword}`);
+        }
+      }
+
+      // Primary keywords in body (2x weight)
+      for (const keyword of config.primary || []) {
+        const kwLower = keyword.toLowerCase();
+        if (paragraphs.includes(kwLower) || description.includes(kwLower)) {
+          scores[industry] += SIGNAL_WEIGHTS.primaryKeyword;
+          signalLog[industry].push(`primary:${keyword}`);
+        }
+      }
+
+      // Secondary keywords in any text (1x weight)
+      for (const keyword of config.secondary || []) {
+        const kwLower = keyword.toLowerCase();
+        const allText = `${businessName} ${headlines} ${paragraphs} ${services}`;
+        if (allText.includes(kwLower)) {
+          scores[industry] += SIGNAL_WEIGHTS.secondaryKeyword;
+          signalLog[industry].push(`secondary:${keyword}`);
+        }
       }
     }
 
-    return bestMatch.industry;
+    // Find best match
+    let bestIndustry = 'general';
+    let bestScore = 0;
+
+    for (const [industry, score] of Object.entries(scores)) {
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndustry = industry;
+      }
+    }
+
+    // Calculate confidence (normalize score to 0-1 range)
+    // A score of 10+ is considered very high confidence
+    const maxPossibleScore = 15; // Approximate max realistic score
+    const confidence = Math.min(1, Math.max(0, bestScore / maxPossibleScore));
+
+    // Log detection for debugging
+    const topSignals = signalLog[bestIndustry] || [];
+    log.info('Industry detected', {
+      industry: bestIndustry,
+      confidence: confidence.toFixed(2),
+      score: bestScore.toFixed(1),
+      signals: topSignals.slice(0, 5),
+      businessName: siteData.businessName
+    });
+
+    // Store detection result on siteData for later use
+    siteData.detectedIndustry = {
+      industry: bestIndustry,
+      confidence,
+      score: bestScore,
+      signals: topSignals
+    };
+
+    return bestIndustry;
+  }
+
+  /**
+   * Extract Schema.org @type from siteData
+   */
+  extractSchemaType(siteData) {
+    // Check direct schema property
+    if (siteData.schema) {
+      const schema = siteData.schema;
+      if (typeof schema === 'string') return schema;
+      if (schema['@type']) return schema['@type'];
+      if (Array.isArray(schema) && schema[0]?.['@type']) return schema[0]['@type'];
+    }
+
+    // Check structured data from scraper
+    if (siteData.structuredData) {
+      for (const item of siteData.structuredData) {
+        if (item['@type'] && SCHEMA_TO_INDUSTRY[item['@type']]) {
+          return item['@type'];
+        }
+      }
+    }
+
+    return null;
   }
 
   mapSlots(siteData, config) {
@@ -510,6 +691,13 @@ export class TemplateBuilder {
     const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
     const slots = this.mapSlots(siteData, config);
 
+    // Get layout variant for this industry
+    const variantName = INDUSTRY_VARIANTS[industry] || 'classic';
+    const variant = LAYOUT_VARIANTS[variantName];
+    slots.heroVariant = variant.heroLayout; // 'split', 'centered', 'fullwidth', 'asymmetric'
+    slots.cardStyle = variant.cardStyle;
+    slots.variantName = variantName;
+
     // Build HTML from sections
     const sections = (config.sections || []).map(section => {
       const component = this.components[section];
@@ -590,8 +778,17 @@ export class TemplateBuilder {
     const industry = siteData.industry || this.detectIndustry(siteData);
     const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
 
-    // Resolve icon names to actual SVG HTML
-    const slotsWithIcons = this.resolveIcons(polishedSlots);
+    // Get layout variant for this industry
+    const variantName = INDUSTRY_VARIANTS[industry] || 'classic';
+    const variant = LAYOUT_VARIANTS[variantName];
+
+    // Resolve icon names to actual SVG HTML and add variant info
+    const slotsWithIcons = {
+      ...this.resolveIcons(polishedSlots),
+      heroVariant: variant.heroLayout,
+      cardStyle: variant.cardStyle,
+      variantName
+    };
 
     // Build HTML from sections with resolved icons
     const sections = (config.sections || []).map(section => {

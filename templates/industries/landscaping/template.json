@@ -1,0 +1,53 @@
+{
+  "id": "landscaping",
+  "name": "Landscaping",
+  "keywords": ["landscaping", "landscaper", "lawn care", "lawn service", "yard work", "mowing", "irrigation", "hardscape", "patio", "garden", "tree service"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Transform Your Outdoor Space",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Professional landscaping that brings your vision to life",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Get Free Quote"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Services"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#16a34a",
+      "secondary": "#78350f",
+      "accent": "#84cc16"
+    }
+  }
+}

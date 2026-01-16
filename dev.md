@@ -1,5 +1,10 @@
 # Development Notes
 
+
+OUTSCRAPER_API_KEY - For LeadFinder (primary)
+GOOGLE_PLACES_API_KEY - For Google Places fallback
+
+
 ## Environment Variables (in .env)
 - ANTHROPIC_API_KEY - Claude API key for AI features
 - NETLIFY_AUTH_TOKEN - Netlify API token for deployments

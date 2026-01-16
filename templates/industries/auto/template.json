@@ -1,0 +1,53 @@
+{
+  "id": "auto",
+  "name": "Auto Repair",
+  "keywords": ["auto repair", "auto shop", "mechanic", "car repair", "automotive", "oil change", "brake", "tire", "transmission", "engine", "diagnostic"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Get Back on the Road Fast",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Honest, reliable auto repair you can trust",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Schedule Service"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Auto Services"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#dc2626",
+      "secondary": "#171717",
+      "accent": "#f59e0b"
+    }
+  }
+}

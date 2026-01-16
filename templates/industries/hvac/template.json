@@ -1,0 +1,53 @@
+{
+  "id": "hvac",
+  "name": "HVAC",
+  "keywords": ["hvac", "heating", "cooling", "air conditioning", "furnace", "ac repair", "thermostat", "duct", "ventilation", "heat pump", "boiler", "central air", "mini split"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Stay Comfortable Year-Round",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Expert heating and cooling solutions for your home and business",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Schedule Service"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our HVAC Services"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#ea580c",
+      "secondary": "#334155",
+      "accent": "#f59e0b"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "salon",
+  "name": "Salon & Spa",
+  "keywords": ["salon", "hair salon", "beauty salon", "barber", "barbershop", "spa", "haircut", "stylist", "nails", "manicure", "pedicure", "facial"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Look Good, Feel Amazing",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Where style meets relaxation in a welcoming atmosphere",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Book Appointment"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Services"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#ec4899",
+      "secondary": "#a855f7",
+      "accent": "#f472b6"
+    }
+  }
+}

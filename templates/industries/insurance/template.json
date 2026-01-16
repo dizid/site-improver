@@ -1,0 +1,53 @@
+{
+  "id": "insurance",
+  "name": "Insurance",
+  "keywords": ["insurance", "insure", "coverage", "policy", "auto insurance", "home insurance", "life insurance", "claim", "premium", "agent", "broker"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Protection for What Matters Most",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Personalized insurance solutions from people who care",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Get Free Quote"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Coverage Options"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#1e3a5f",
+      "secondary": "#2563eb",
+      "accent": "#0ea5e9"
+    }
+  }
+}

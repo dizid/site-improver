@@ -1,0 +1,53 @@
+{
+  "id": "gym",
+  "name": "Gym & Fitness",
+  "keywords": ["gym", "fitness", "health club", "fitness center", "workout", "training", "personal trainer", "crossfit", "yoga", "pilates", "exercise"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Transform Your Body, Transform Your Life",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Results-driven fitness in a motivating environment",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Start Free Trial"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Programs & Classes"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#171717",
+      "secondary": "#dc2626",
+      "accent": "#f59e0b"
+    }
+  }
+}

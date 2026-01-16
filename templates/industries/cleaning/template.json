@@ -1,0 +1,53 @@
+{
+  "id": "cleaning",
+  "name": "Cleaning Service",
+  "keywords": ["cleaning", "maid", "janitorial", "housekeeping", "cleaner", "house cleaning", "office cleaning", "carpet cleaning", "pressure washing"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "A Cleaner Home, A Happier You",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Professional cleaning services that give you back your time",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Book Cleaning"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Services"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#0d9488",
+      "secondary": "#0ea5e9",
+      "accent": "#22d3d1"
+    }
+  }
+}
