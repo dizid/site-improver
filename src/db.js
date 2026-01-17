@@ -858,6 +858,7 @@ export async function createPreview(data) {
     siteData: data.siteData || null,
     slots: data.slots || null,
     status: data.status || 'complete',
+    validation: data.validation || null,  // Quality validation results
     expiresAt: data.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     viewCount: 0,
     createdAt: timestamp,

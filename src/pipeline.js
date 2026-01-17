@@ -8,6 +8,7 @@ import logger from './logger.js';
 import { extractCity, generatePreviewSlug } from './utils.js';
 import { getFeatures } from './config.js';
 import { ImageService, selectHeroImage } from './imageService.js';
+import { validatePreview } from './previewValidator.js';
 
 const log = logger.child('pipeline');
 
@@ -194,8 +195,28 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     throw createPipelineError(`Failed to generate HTML: ${error.message}`, 'generate', error);
   }
 
-  // 6. Save preview to database (self-hosted, no external Netlify deployment)
-  log.info('Step 6: Saving preview to database...');
+  // 6. Validate preview quality
+  log.info('Step 6: Validating preview quality...');
+  tracker.building({ label: 'Checking quality...', progress: 85 });
+
+  const validation = validatePreview(siteData, polishedSlots, industry);
+
+  if (!validation.isValid) {
+    log.warn('Preview validation failed', {
+      issues: validation.issues.map(i => i.type),
+      qualityScore: validation.qualityScore
+    });
+  } else if (validation.warnings.length > 0) {
+    log.info('Preview validation passed with warnings', {
+      warnings: validation.warnings.map(w => w.type),
+      qualityScore: validation.qualityScore
+    });
+  } else {
+    log.info('Preview validation passed', { qualityScore: validation.qualityScore });
+  }
+
+  // 7. Save preview to database (self-hosted, no external Netlify deployment)
+  log.info('Step 7: Saving preview to database...');
   tracker.deploying({ label: 'Saving preview...' });
 
   const slug = generatePreviewSlug(siteData.businessName || 'preview');
@@ -211,10 +232,16 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
       html: finalHtml,
       siteData,
       slots: polishedSlots,
-      status: 'complete',
+      status: validation.isValid ? 'complete' : 'review_needed',
+      validation,
       expiresAt
     });
-    log.info('Preview saved to database', { slug, id: preview.id });
+    log.info('Preview saved to database', {
+      slug,
+      id: preview.id,
+      status: preview.status,
+      qualityScore: validation.qualityScore
+    });
   } catch (error) {
     log.error('Failed to save preview', { error: error.message, slug });
     tracker.error(error, 'save');
@@ -234,7 +261,10 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     preview: `/preview/${slug}`,
     slug,
     previewId: preview.id,
-    expiresAt: expiresAt.toISOString()
+    expiresAt: expiresAt.toISOString(),
+    // Validation results
+    validation,
+    status: validation.isValid ? 'complete' : 'review_needed'
   };
 
   // Also save to deployments table for backwards compatibility

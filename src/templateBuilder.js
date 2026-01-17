@@ -436,12 +436,19 @@ export class TemplateBuilder {
       mapped[`${slotName}_aiEnhance`] = slotConfig.aiEnhance || false;
     }
 
-    // Also add smart fallback arrays for sections that might not be in config
-    if (!mapped.services || (Array.isArray(mapped.services) && mapped.services.length === 0)) {
-      mapped.services = smartFallbacks.services;
-    }
-    if (!mapped.why_us_points || (Array.isArray(mapped.why_us_points) && mapped.why_us_points.length === 0)) {
-      mapped.why_us_points = smartFallbacks.why_us_points;
+    // Merge ALL smart fallbacks as defaults for any missing slots
+    // Smart fallbacks include: headline, subheadline, cta_text, services, why_us_points,
+    // section_services, services_subtitle, section_why_us, testimonials_title,
+    // section_contact, cta_help, cta_ready, form_name, form_email, form_phone,
+    // form_message, btn_send, business_name
+    for (const [key, value] of Object.entries(smartFallbacks)) {
+      if (mapped[key] === undefined || mapped[key] === null || mapped[key] === '') {
+        mapped[key] = value;
+      }
+      // Handle empty arrays
+      if (Array.isArray(mapped[key]) && mapped[key].length === 0 && Array.isArray(value) && value.length > 0) {
+        mapped[key] = value;
+      }
     }
 
     return mapped;

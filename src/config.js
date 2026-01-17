@@ -21,10 +21,14 @@ export const CONFIG = {
     headlines: 10,            // Max headlines to extract
     paragraphs: 10,           // Max paragraphs to extract
     services: 10,             // Max services to extract
-    testimonials: 5,          // Max testimonials to extract
+    testimonials: 10,         // Max testimonials to extract (increased for better coverage)
     images: 20,               // Max images to extract
     colors: 5,                // Max colors to extract from site
-    siteNameLength: 30        // Max length for generated site names
+    siteNameLength: 30,       // Max length for generated site names
+    listItems: 20,            // Max list items to extract
+    faqs: 10,                 // Max FAQs to extract
+    blockquotes: 10,          // Max blockquotes to extract
+    tables: 5                 // Max tables to extract
   },
 
   // Site scoring configuration

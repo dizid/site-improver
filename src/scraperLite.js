@@ -256,13 +256,262 @@ function extractContent($) {
   });
 
   const testimonials = extractTestimonials($);
+  const listItems = extractListItems($);
+  const faqs = extractFAQs($);
+  const blockquotes = extractBlockquotes($);
+  const tables = extractTableContent($);
 
   return {
     headlines: headlines.slice(0, CONFIG.limits.headlines),
     paragraphs: paragraphs.slice(0, CONFIG.limits.paragraphs),
     services: services.slice(0, CONFIG.limits.services),
-    testimonials: testimonials.slice(0, CONFIG.limits.testimonials)
+    testimonials: testimonials.slice(0, CONFIG.limits.testimonials),
+    listItems,
+    faqs,
+    blockquotes,
+    tables
   };
+}
+
+/**
+ * Extract meaningful list items (services, features, benefits)
+ * Filters out navigation and menu items
+ */
+function extractListItems($) {
+  const listItems = [];
+  const seenTexts = new Set();
+
+  // Priority selectors for meaningful content
+  const contentSelectors = [
+    'main li', 'article li', '.services li', '.features li',
+    '.benefits li', '[class*="service"] li', '[class*="feature"] li',
+    '.content li', '#content li', '[class*="list"] li'
+  ];
+
+  // Ancestors to exclude
+  const excludeAncestors = [
+    'nav', 'header', 'footer', '.menu', '.navigation',
+    '[role="navigation"]', '.breadcrumb', '.pagination'
+  ];
+
+  for (const selector of contentSelectors) {
+    $(selector).each((_, el) => {
+      if ($(el).closest(excludeAncestors.join(', ')).length > 0) return;
+
+      const text = $(el).text().trim().replace(/\s+/g, ' ');
+      if (text.length < 10 || text.length > 200) return;
+      if (seenTexts.has(text.toLowerCase())) return;
+
+      // Skip if it's just a navigation link
+      if ($(el).find('a').length > 0 &&
+          $(el).find('a').text().trim() === text) return;
+
+      seenTexts.add(text.toLowerCase());
+      listItems.push({
+        text,
+        context: $(el).closest('section, div').find('h2, h3').first().text().trim() || null
+      });
+    });
+  }
+
+  return listItems.slice(0, 20);
+}
+
+/**
+ * Extract FAQ content from multiple sources
+ */
+function extractFAQs($) {
+  const faqs = [];
+  const seenQuestions = new Set();
+
+  // Strategy 1: FAQPage Schema.org JSON-LD
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).html());
+      const items = data['@graph'] || [data];
+
+      for (const item of items) {
+        if (item['@type'] === 'FAQPage' && item.mainEntity) {
+          const entities = Array.isArray(item.mainEntity)
+            ? item.mainEntity : [item.mainEntity];
+
+          for (const entity of entities) {
+            if (entity['@type'] === 'Question' && entity.acceptedAnswer) {
+              const question = entity.name;
+              const answer = entity.acceptedAnswer.text;
+              if (question && answer &&
+                  !seenQuestions.has(question.toLowerCase())) {
+                seenQuestions.add(question.toLowerCase());
+                faqs.push({ question, answer: answer.slice(0, 500), source: 'schema' });
+              }
+            }
+          }
+        }
+      }
+    } catch (e) { /* Invalid JSON */ }
+  });
+
+  // Strategy 2: FAQ/Accordion section containers
+  const faqSelectors = [
+    '[class*="faq"]', '[class*="accordion"]',
+    '[id*="faq"]', '[data-faq]'
+  ];
+
+  for (const selector of faqSelectors) {
+    $(selector).each((_, container) => {
+      $(container).find('[class*="question"], dt, summary, button[aria-expanded]').each((_, qEl) => {
+        const question = $(qEl).text().trim().replace(/\s+/g, ' ');
+        if (question.length < 10 || question.length > 200) return;
+        if (seenQuestions.has(question.toLowerCase())) return;
+
+        // Find answer in sibling/panel
+        let answer = '';
+        const answerSources = [
+          $(qEl).next('[class*="answer"], [class*="content"], dd, p, [class*="panel"]'),
+          $(qEl).parent().find('[class*="answer"], [class*="body"]'),
+          $(qEl).closest('[class*="item"]').find('[class*="answer"], [class*="content"]')
+        ];
+
+        for (const $answer of answerSources) {
+          if ($answer.length && $answer.text().trim().length > 20) {
+            answer = $answer.text().trim().replace(/\s+/g, ' ');
+            break;
+          }
+        }
+
+        if (answer.length > 20) {
+          seenQuestions.add(question.toLowerCase());
+          faqs.push({ question, answer: answer.slice(0, 500), source: 'html' });
+        }
+      });
+    });
+  }
+
+  // Strategy 3: Definition lists
+  $('dl').each((_, dl) => {
+    $(dl).find('dt').each((_, dt) => {
+      const question = $(dt).text().trim().replace(/\s+/g, ' ');
+      const answer = $(dt).next('dd').text().trim().replace(/\s+/g, ' ');
+
+      if (question.length > 10 && answer.length > 20 &&
+          !seenQuestions.has(question.toLowerCase())) {
+        seenQuestions.add(question.toLowerCase());
+        faqs.push({ question, answer: answer.slice(0, 500), source: 'dl' });
+      }
+    });
+  });
+
+  log.debug('Extracted FAQs', { count: faqs.length });
+  return faqs.slice(0, 10);
+}
+
+/**
+ * Extract blockquotes for testimonials or important quotes
+ */
+function extractBlockquotes($) {
+  const quotes = [];
+  const seenTexts = new Set();
+
+  $('blockquote').each((_, el) => {
+    if ($(el).find('code, pre').length > 0) return; // Skip code blocks
+
+    const text = $(el).text().trim().replace(/\s+/g, ' ');
+    if (text.length < 30 || text.length > 600) return;
+    if (seenTexts.has(text.toLowerCase())) return;
+
+    seenTexts.add(text.toLowerCase());
+
+    // Find citation/author
+    let author = null;
+    const citeSources = [
+      $(el).find('cite, footer, .author'),
+      $(el).next('cite, .author'),
+      $(el).parent().find('figcaption')
+    ];
+
+    for (const $source of citeSources) {
+      if ($source.length && $source.text().trim()) {
+        author = $source.text().trim();
+        break;
+      }
+    }
+
+    quotes.push({
+      text,
+      author,
+      context: $(el).closest('section').find('h2, h3').first().text().trim() || null
+    });
+  });
+
+  return quotes.slice(0, 10);
+}
+
+/**
+ * Extract table content (menus, pricing, hours)
+ */
+function extractTableContent($) {
+  const tables = [];
+
+  $('table').each((_, table) => {
+    const $table = $(table);
+    const rows = $table.find('tr');
+    if (rows.length < 2 || rows.length > 50) return;
+
+    // Get table context/heading
+    let context = '';
+    const headingSources = [
+      $table.closest('section').find('h2, h3').first(),
+      $table.prev('h2, h3'),
+      $table.find('caption')
+    ];
+
+    for (const $h of headingSources) {
+      if ($h.length && $h.text().trim()) {
+        context = $h.text().trim();
+        break;
+      }
+    }
+
+    // Extract headers
+    const headers = [];
+    $table.find('thead th, tr:first-child th').each((_, th) => {
+      headers.push($(th).text().trim());
+    });
+
+    // Extract rows
+    const tableRows = [];
+    const startIdx = headers.length > 0 && $table.find('thead').length === 0 ? 1 : 0;
+
+    $table.find('tbody tr, tr').slice(startIdx, 30).each((_, tr) => {
+      const rowData = [];
+      $(tr).find('td, th').each((_, cell) => {
+        rowData.push($(cell).text().trim().replace(/\s+/g, ' '));
+      });
+      if (rowData.some(c => c.length > 0)) tableRows.push(rowData);
+    });
+
+    if (tableRows.length > 0) {
+      tables.push({
+        context,
+        headers: headers.length > 0 ? headers : null,
+        rows: tableRows,
+        type: detectTableType(context, headers)
+      });
+    }
+  });
+
+  return tables.slice(0, 5);
+}
+
+/**
+ * Detect table type from context and headers
+ */
+function detectTableType(context, headers) {
+  const text = ((context || '') + ' ' + (headers || []).join(' ')).toLowerCase();
+  if (text.match(/hour|time|day|schedule/)) return 'hours';
+  if (text.match(/price|cost|menu|service|rate/)) return 'pricing';
+  if (text.match(/contact|phone|email|location/)) return 'contact';
+  return 'general';
 }
 
 function extractContact($, html) {
@@ -308,27 +557,163 @@ function extractContact($, html) {
 }
 
 function extractMedia($, baseUrl) {
-  const images = [];
+  const imageData = [];
+  const ogImage = $('meta[property="og:image"]').attr('content');
 
+  // 1. Add OG image first (high priority)
+  if (ogImage) {
+    let ogSrc = ogImage;
+    if (ogSrc.startsWith('/')) ogSrc = new URL(ogSrc, baseUrl).href;
+    else if (!ogSrc.startsWith('http')) {
+      try { ogSrc = new URL(ogSrc, baseUrl).href; } catch { /* skip */ }
+    }
+
+    if (ogSrc.startsWith('http')) {
+      imageData.push({
+        src: ogSrc,
+        alt: $('meta[property="og:image:alt"]').attr('content') || 'Featured image',
+        width: parseInt($('meta[property="og:image:width"]').attr('content')) || 1200,
+        height: parseInt($('meta[property="og:image:height"]').attr('content')) || 630,
+        position: 'hero',
+        isOg: true,
+        isLogo: false
+      });
+    }
+  }
+
+  // 2. Process all images
   $('img').each((_, el) => {
     let src = $(el).attr('src') || $(el).attr('data-src');
     if (!src) return;
 
-    if (src.startsWith('/')) {
-      src = new URL(src, baseUrl).href;
-    } else if (!src.startsWith('http')) {
+    // Normalize URL
+    if (src.startsWith('/')) src = new URL(src, baseUrl).href;
+    else if (!src.startsWith('http')) {
       try { src = new URL(src, baseUrl).href; } catch { return; }
     }
 
-    const width = parseInt($(el).attr('width')) || 999;
-    const height = parseInt($(el).attr('height')) || 999;
-    if (width < 50 || height < 50) return;
-    if (src.includes('pixel') || src.includes('data:image') || src.includes('.svg')) return;
+    // Skip OG image duplicate
+    if (ogImage && src === ogImage) return;
 
-    images.push({ src, alt: $(el).attr('alt') || '', context: '' });
+    // Get dimensions
+    let width = parseInt($(el).attr('width')) || 400;
+    let height = parseInt($(el).attr('height')) || 300;
+
+    // FILTER: Skip tiny images (<100px)
+    if (width < 100 || height < 100) return;
+
+    // FILTER: Skip problematic URLs
+    const srcLower = src.toLowerCase();
+    if (srcLower.match(/pixel|tracking|analytics|beacon|1x1|spacer|sprite/) ||
+        src.includes('data:image') ||
+        srcLower.endsWith('.svg') ||
+        srcLower.endsWith('.gif') ||
+        srcLower.match(/facebook\.com|twitter\.com|linkedin\.com|instagram\.com/)) return;
+
+    const position = detectImagePosition($, el);
+    const isLogo = isLikelyLogo($, el);
+
+    imageData.push({
+      src,
+      alt: $(el).attr('alt') || '',
+      width, height,
+      position,
+      isOg: false,
+      isLogo
+    });
   });
 
-  return { images: images.slice(0, CONFIG.limits.images) };
+  // 3. Calculate scores and sort
+  for (const img of imageData) {
+    img.score = calculateImageScore(img);
+  }
+  imageData.sort((a, b) => b.score - a.score);
+
+  // 4. Log top images
+  log.debug('Image ranking', {
+    total: imageData.length,
+    top3: imageData.slice(0, 3).map(i => ({
+      score: i.score, size: `${i.width}x${i.height}`, position: i.position
+    }))
+  });
+
+  // 5. Return ranked images
+  return {
+    images: imageData.slice(0, CONFIG.limits.images).map(img => ({
+      src: img.src,
+      alt: img.alt,
+      context: img.position,
+      score: img.score,
+      isLogo: img.isLogo,
+      width: img.width,
+      height: img.height
+    }))
+  };
+}
+
+/**
+ * Calculate image quality score (0-100)
+ */
+function calculateImageScore(imgData) {
+  let score = 0;
+
+  // 1. Size score (30% weight) - larger is better
+  const area = (imgData.width || 100) * (imgData.height || 100);
+  if (area >= 40000) { // Min 200x200
+    score += Math.min(30, Math.floor((area - 40000) / 30000));
+  }
+
+  // 2. Position score (25% weight)
+  const positionScores = { hero: 25, header: 20, 'above-fold': 15, main: 10 };
+  score += positionScores[imgData.position] || 0;
+
+  // 3. Alt text score (20% weight)
+  if (imgData.alt && imgData.alt.length > 5) {
+    const altLower = imgData.alt.toLowerCase();
+    if (!altLower.match(/icon|logo|button|arrow|spacer/)) {
+      score += 15;
+      if (altLower.match(/team|office|work|service|product|project/)) score += 5;
+    }
+  }
+
+  // 4. OG:image bonus (15% weight)
+  if (imgData.isOg) score += 15;
+
+  // 5. Logo penalty for hero use (logos are useful but not for main hero)
+  if (imgData.isLogo) score -= 10;
+
+  return Math.max(0, Math.round(score));
+}
+
+/**
+ * Detect image position context
+ */
+function detectImagePosition($, el) {
+  const $el = $(el);
+
+  if ($el.closest('.hero, [class*="hero"], #hero, [class*="banner"], [class*="jumbotron"]').length) {
+    return 'hero';
+  }
+  if ($el.closest('header, .header, [role="banner"]').length) return 'header';
+
+  const index = $('img').index(el);
+  if (index < 3) return 'above-fold';
+  if (index < 10) return 'main';
+  return 'other';
+}
+
+/**
+ * Check if image is likely a logo
+ */
+function isLikelyLogo($, el) {
+  const $el = $(el);
+  const src = ($el.attr('src') || '').toLowerCase();
+  const alt = ($el.attr('alt') || '').toLowerCase();
+  const cls = ($el.attr('class') || '').toLowerCase();
+
+  return src.includes('logo') || alt.includes('logo') ||
+         cls.includes('logo') ||
+         $el.closest('[class*="logo"], .brand, [class*="brand"]').length > 0;
 }
 
 function extractMeta($) {
@@ -440,6 +825,57 @@ function extractTestimonials($) {
     }
   });
 
+  // Strategy 7: Case study / success story sections
+  $('section, div').each((_, section) => {
+    const heading = $(section).find('h1, h2, h3').first().text().toLowerCase();
+    const keywords = ['case study', 'success story', 'customer story', 'client spotlight', 'featured client'];
+
+    if (keywords.some(kw => heading.includes(kw))) {
+      $(section).find('[class*="quote"], blockquote, [class*="testimonial"]').each((_, item) => {
+        const testimonial = extractSingleTestimonial($, item);
+        if (testimonial && !seenTexts.has(testimonial.text.toLowerCase())) {
+          seenTexts.add(testimonial.text.toLowerCase());
+          testimonials.push({ ...testimonial, source: 'case-study' });
+        }
+      });
+    }
+  });
+
+  // Strategy 8: Facebook review widgets
+  $('[class*="fb-review"], [data-href*="facebook.com/reviews"], .facebook-review, [class*="facebook"][class*="review"]').each((_, el) => {
+    const text = $(el).find('[class*="text"], [class*="content"], p').first().text().trim();
+    if (text.length > 20 && text.length < 500 && !seenTexts.has(text.toLowerCase())) {
+      seenTexts.add(text.toLowerCase());
+      const authorDetails = extractAuthorDetails($, el);
+      testimonials.push({
+        text,
+        author: authorDetails.name || 'Facebook User',
+        rating: extractStarRating($, el),
+        source: 'facebook',
+        company: authorDetails.company || null
+      });
+    }
+  });
+
+  // Strategy 9: Review schema microdata
+  $('[itemtype*="Review"], [itemprop="review"]').each((_, el) => {
+    const $el = $(el);
+    const text = $el.find('[itemprop="reviewBody"]').text().trim();
+
+    if (text.length > 20 && text.length < 500 && !seenTexts.has(text.toLowerCase())) {
+      seenTexts.add(text.toLowerCase());
+      const authorName = $el.find('[itemprop="author"]').text().trim();
+      const rating = $el.find('[itemprop="ratingValue"]').attr('content');
+
+      testimonials.push({
+        text,
+        author: authorName || 'Customer',
+        rating: rating ? parseFloat(rating) : extractStarRating($, el),
+        source: 'microdata'
+      });
+    }
+  });
+
   log.debug('Extracted testimonials', { count: testimonials.length });
   return testimonials;
 }
@@ -512,35 +948,151 @@ function extractSingleTestimonial($, el) {
 }
 
 /**
- * Extract star rating from an element
+ * Enhanced star rating extraction with multiple detection methods
  */
 function extractStarRating($, el) {
-  // Method 1: Aria labels
-  const ariaLabel = $(el).find('[aria-label*="star"], [aria-label*="rating"]').attr('aria-label');
+  const $el = $(el);
+
+  // Method 1: Aria labels (most reliable)
+  const ariaLabel = $el.find('[aria-label*="star"], [aria-label*="rating"]').attr('aria-label') ||
+                    $el.attr('aria-label');
   if (ariaLabel) {
-    const match = ariaLabel.match(/(\d+(?:\.\d+)?)/);
+    const match = ariaLabel.match(/(\d+(?:\.\d+)?)\s*(?:out of|stars?)?/i);
     if (match) return parseFloat(match[1]);
   }
 
   // Method 2: Data attributes
-  const dataRating = $(el).find('[data-rating], [data-stars]').first().attr('data-rating') ||
-                    $(el).find('[data-rating], [data-stars]').first().attr('data-stars');
-  if (dataRating) return parseFloat(dataRating);
+  const dataAttrs = ['data-rating', 'data-stars', 'data-score', 'data-value'];
+  for (const attr of dataAttrs) {
+    const value = $el.find(`[${attr}]`).first().attr(attr) || $el.attr(attr);
+    if (value) {
+      const parsed = parseFloat(value);
+      if (parsed >= 0 && parsed <= 5) return parsed;
+    }
+  }
 
-  // Method 3: Count star icons
-  const filledStars = $(el).find('[class*="star-filled"], [class*="star-active"], .fa-star:not(.fa-star-o), .fas.fa-star').length;
-  if (filledStars > 0 && filledStars <= 5) return filledStars;
+  // Method 3: Class patterns (star-5, rating-4, etc.)
+  const classPatterns = [/star[s-]?(\d)/i, /rating[s-]?(\d)/i, /(\d)-star/i];
+  const classString = $el.find('[class*="star"], [class*="rating"]').attr('class') ||
+                      $el.attr('class') || '';
 
-  // Method 4: SVG stars
-  const svgStars = $(el).find('svg[class*="star"], [class*="star"] svg').length;
+  for (const pattern of classPatterns) {
+    const match = classString.match(pattern);
+    if (match) return parseInt(match[1]);
+  }
+
+  // Method 4: Count filled star icons (multiple selectors)
+  const filledSelectors = [
+    '.fa-star:not(.fa-star-o):not(.far)',
+    '.fas.fa-star',
+    '[class*="star-filled"]',
+    '[class*="star-active"]',
+    '.star.active',
+    '[class*="star"][class*="full"]'
+  ];
+
+  for (const sel of filledSelectors) {
+    const count = $el.find(sel).length;
+    if (count > 0 && count <= 5) return count;
+  }
+
+  // Method 5: SVG stars
+  const svgStars = $el.find('svg[class*="star"], [class*="star"] svg').length;
   if (svgStars > 0 && svgStars <= 5) return svgStars;
 
-  // Method 5: Text-based rating
-  const ratingText = $(el).find('[class*="rating"]').text();
-  const textMatch = ratingText.match(/(\d+(?:\.\d+)?)\s*(?:\/\s*5|out of 5|stars?)/i);
-  if (textMatch) return parseFloat(textMatch[1]);
+  // Method 6: Text patterns
+  const text = $el.text() + ' ' + $el.find('[class*="rating"]').text();
+  const textPatterns = [
+    /(\d+(?:\.\d+)?)\s*\/\s*5/i,
+    /(\d+(?:\.\d+)?)\s*out\s*of\s*5/i,
+    /(\d+(?:\.\d+)?)\s*stars?/i
+  ];
+
+  for (const pattern of textPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const rating = parseFloat(match[1]);
+      if (rating >= 0 && rating <= 5) return rating;
+    }
+  }
 
   return null;
+}
+
+/**
+ * Extract detailed author information from a testimonial element
+ */
+function extractAuthorDetails($, el) {
+  const $el = $(el);
+  const result = { name: '', company: '', role: '', location: '' };
+
+  // Name selectors in order of priority
+  const nameSelectors = [
+    '[class*="author-name"]', '[class*="reviewer-name"]',
+    '[class*="name"]:not([class*="company"])',
+    '[class*="author"]', 'cite', 'strong:first', 'b:first'
+  ];
+
+  for (const sel of nameSelectors) {
+    const $name = $el.find(sel).first();
+    if ($name.length && $name.text().trim().length > 1 && $name.text().trim().length < 60) {
+      result.name = $name.text().trim();
+      break;
+    }
+  }
+
+  // Company selectors
+  const companySelectors = ['[class*="company"]', '[class*="business"]', '[class*="org"]', '[class*="employer"]'];
+  for (const sel of companySelectors) {
+    const $company = $el.find(sel).first();
+    if ($company.length && $company.text().trim()) {
+      result.company = $company.text().trim();
+      break;
+    }
+  }
+
+  // Role/title selectors
+  const roleSelectors = ['[class*="title"]', '[class*="role"]', '[class*="position"]', '[class*="job"]'];
+  for (const sel of roleSelectors) {
+    const $role = $el.find(sel).first();
+    if ($role.length && $role.text().trim().length < 60) {
+      result.role = $role.text().trim();
+      break;
+    }
+  }
+
+  // Location selectors
+  const locationSelectors = ['[class*="location"]', '[class*="city"]', '[class*="place"]'];
+  for (const sel of locationSelectors) {
+    const $loc = $el.find(sel).first();
+    if ($loc.length && $loc.text().trim()) {
+      result.location = $loc.text().trim();
+      break;
+    }
+  }
+
+  // Fallback: parse "Name, Role at Company" pattern from footer/cite
+  if (!result.name) {
+    const footer = $el.find('footer, cite, figcaption, [class*="attribution"]').first().text().trim();
+    const match = footer.match(/^([^,]+),?\s*(.+)?$/);
+    if (match) {
+      result.name = match[1].trim();
+      if (match[2]) {
+        const rc = match[2].match(/(.+?)\s+(?:at|@|from)\s+(.+)/i);
+        if (rc) {
+          result.role = rc[1].trim();
+          result.company = rc[2].trim();
+        }
+      }
+    }
+  }
+
+  // Clean up dash/em-dash prefixes
+  if (result.name.startsWith('—') || result.name.startsWith('-')) {
+    result.name = result.name.slice(1).trim();
+  }
+
+  return result;
 }
 
 /**

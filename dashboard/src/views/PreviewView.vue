@@ -60,8 +60,38 @@
           <span v-if="preview.viewCount" class="preview-views">
             {{ preview.viewCount }} views
           </span>
+          <span v-if="preview.validation" class="quality-badge" :class="qualityClass">
+            {{ preview.validation.qualityScore }}%
+          </span>
         </div>
       </header>
+
+      <!-- Validation Warnings -->
+      <div v-if="hasValidationIssues" class="validation-panel">
+        <div v-if="preview.validation.issues.length > 0" class="validation-issues">
+          <div class="validation-header critical">
+            <span class="validation-icon">!</span>
+            <strong>Quality Issues ({{ preview.validation.issues.length }})</strong>
+          </div>
+          <ul class="validation-list">
+            <li v-for="issue in preview.validation.issues" :key="issue.type">
+              {{ issue.message }}
+              <span v-if="issue.actual" class="validation-actual">{{ issue.actual }}</span>
+            </li>
+          </ul>
+        </div>
+        <div v-if="preview.validation.warnings.length > 0" class="validation-warnings">
+          <div class="validation-header warning">
+            <span class="validation-icon">i</span>
+            <strong>Warnings ({{ preview.validation.warnings.length }})</strong>
+          </div>
+          <ul class="validation-list">
+            <li v-for="warning in preview.validation.warnings" :key="warning.type">
+              {{ warning.message }}
+            </li>
+          </ul>
+        </div>
+      </div>
 
       <!-- Analytics Panel -->
       <div v-if="showAnalytics" class="analytics-panel">
@@ -175,6 +205,20 @@ const isExpiringSoon = computed(() => {
   const now = new Date();
   const diffDays = Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24));
   return diffDays <= 3;
+});
+
+const hasValidationIssues = computed(() => {
+  const v = preview.value?.validation;
+  if (!v) return false;
+  return (v.issues?.length > 0) || (v.warnings?.length > 0);
+});
+
+const qualityClass = computed(() => {
+  const score = preview.value?.validation?.qualityScore;
+  if (score === undefined) return '';
+  if (score >= 80) return 'quality-good';
+  if (score >= 60) return 'quality-ok';
+  return 'quality-poor';
 });
 
 // Methods
@@ -399,6 +443,110 @@ onMounted(() => {
 .preview-views {
   font-size: 0.8125rem;
   color: #6b7280;
+}
+
+/* Quality Badge */
+.quality-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: #374151;
+  color: #9ca3af;
+}
+
+.quality-badge.quality-good {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.quality-badge.quality-ok {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.quality-badge.quality-poor {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Validation Panel */
+.validation-panel {
+  background: #1a1a2e;
+  border-bottom: 1px solid #2a2a3e;
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.validation-issues,
+.validation-warnings {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.validation-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+}
+
+.validation-header.critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.validation-header.warning {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.validation-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.validation-header.critical .validation-icon {
+  background: #ef4444;
+  color: white;
+}
+
+.validation-header.warning .validation-icon {
+  background: #eab308;
+  color: #1a1a2e;
+}
+
+.validation-list {
+  margin: 0;
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  background: #252538;
+  list-style: disc;
+}
+
+.validation-list li {
+  font-size: 0.8125rem;
+  color: #a0a0b0;
+  margin-bottom: 0.375rem;
+}
+
+.validation-list li:last-child {
+  margin-bottom: 0;
+}
+
+.validation-actual {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-left: 0.5rem;
 }
 
 /* Buttons */
