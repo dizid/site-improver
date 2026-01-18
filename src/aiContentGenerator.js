@@ -495,25 +495,70 @@ REQUIREMENTS:
   getFallbackContent(siteData, industry) {
     const industryContent = getIndustryContent(industry);
     const city = extractCity(siteData.address) || 'your area';
+    const trust = siteData.trustSignals || {};
+    const businessName = siteData.businessName || 'Our Team';
+    const industryLabel = industry ? industry.charAt(0).toUpperCase() + industry.slice(1) : 'Services';
+
+    // Build headline using trust signals when available
+    let headline;
+    if (trust.yearsInBusiness && trust.yearsInBusiness >= 5) {
+      headline = `${trust.yearsInBusiness}+ Years Serving ${city}`;
+    } else if (trust.foundedYear) {
+      headline = `Serving ${city} Since ${trust.foundedYear}`;
+    } else if (siteData.rating && siteData.rating >= 4.5) {
+      headline = `${siteData.rating}★ Rated ${industryLabel} in ${city}`;
+    } else {
+      headline = `${businessName} — ${city} ${industryLabel}`;
+    }
+
+    // Build subheadline from trust signals or industry content
+    let subheadline;
+    if (trust.certifications?.length > 0) {
+      subheadline = `${trust.certifications[0]} • Serving ${city}`;
+    } else if (siteData.reviewCount && siteData.reviewCount >= 10) {
+      subheadline = `Trusted by ${siteData.reviewCount}+ customers in ${city}`;
+    } else if (industryContent.benefits?.[0]) {
+      subheadline = industryContent.benefits[0];
+    } else {
+      subheadline = `Your local ${industryLabel.toLowerCase()} team in ${city}`;
+    }
+
+    // Build why us points from trust signals
+    const whyUs = [];
+    if (trust.yearsInBusiness) {
+      whyUs.push({ title: `${trust.yearsInBusiness}+ Years Experience`, description: `Established track record in ${city}` });
+    }
+    if (trust.certifications?.length > 0) {
+      whyUs.push({ title: trust.certifications[0], description: 'Verified credentials and training' });
+    }
+    if (trust.insuranceVerified || trust.bondedInsured) {
+      whyUs.push({ title: 'Licensed & Insured', description: 'Full coverage for your peace of mind' });
+    }
+    if (siteData.rating && siteData.rating >= 4.0) {
+      whyUs.push({ title: `${siteData.rating}★ Customer Rating`, description: `Based on ${siteData.reviewCount || 'verified'} reviews` });
+    }
+    // Fill remaining slots if needed
+    if (whyUs.length < 3) {
+      whyUs.push({ title: `${city} Based`, description: 'Local team, fast response times' });
+    }
+    if (whyUs.length < 3) {
+      whyUs.push({ title: 'Free Estimates', description: 'Transparent pricing, no surprises' });
+    }
 
     return {
-      headline: `Quality ${industry || 'Services'} in ${city}`,
-      subheadline: `Professional, reliable service from a trusted local business.`,
+      headline,
+      subheadline,
       services: (siteData.services || []).slice(0, 6).map(name => ({
         name,
-        description: `Professional ${name.toLowerCase()} services`,
+        description: `${name} for ${city} homes and businesses`,
         icon: 'star'
       })),
-      whyUs: [
-        { title: 'Local & Trusted', description: `Proudly serving ${city} and surrounding areas` },
-        { title: 'Quality Guaranteed', description: 'We stand behind every job we do' },
-        { title: 'Experienced Team', description: 'Skilled professionals you can count on' }
-      ],
+      whyUs: whyUs.slice(0, 3),
       testimonialIntro: 'What Our Customers Say',
-      ctaPrimary: 'Contact Us Today',
+      ctaPrimary: industryContent.ctaOptions?.[0] || 'Get a Free Quote',
       ctaSecondary: 'Learn More',
-      aboutSnippet: `${siteData.businessName || 'We'} provide quality ${industry || 'services'} to ${city} and the surrounding area.`,
-      metaDescription: `${siteData.businessName || 'Local'} ${industry || 'business'} in ${city}. Quality service, fair prices.`,
+      aboutSnippet: `${businessName} provides ${industryLabel.toLowerCase()} to ${city} and surrounding areas.`,
+      metaDescription: `${businessName} — ${industryLabel} in ${city}. ${trust.yearsInBusiness ? trust.yearsInBusiness + '+ years experience. ' : ''}Call today.`,
       businessName: siteData.businessName,
       phone: siteData.phone,
       email: siteData.email,

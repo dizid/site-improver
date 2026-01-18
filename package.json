@@ -37,19 +37,24 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "@clerk/express": "^1.7.63",
+    "@sentry/node": "^10.34.0",
     "cheerio": "1.0.0-rc.12",
     "clean-css": "^5.3.3",
     "commander": "^12.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.2.1",
     "firebase-admin": "^13.6.0",
     "handlebars": "^4.7.8",
     "playwright": "^1.48.0",
     "resend": "^4.0.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "stripe": "^20.2.0"
   },
   "devDependencies": {
     "dotenv": "^16.4.5",
+    "supertest": "^7.2.2",
     "vitest": "^2.1.0"
   }
 }

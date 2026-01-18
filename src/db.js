@@ -566,18 +566,26 @@ export async function getEmailDraft(emailId) {
 
 /**
  * Approve an email for sending
+ * @param {string} emailId - Email ID
+ * @param {Object} context - User context with userId, email, name
  */
-export async function approveEmail(emailId) {
+export async function approveEmail(emailId, context = {}) {
   const timestamp = new Date().toISOString();
+
+  // Build audit trail info
+  const auditInfo = {
+    status: 'approved',
+    approvedAt: timestamp,
+    approvedBy: context.userId || null,
+    approvedByEmail: context.email || null,
+    approvedByName: context.name || null,
+    updatedAt: timestamp
+  };
 
   if (isFirebaseEnabled()) {
     const db = getFirestore();
-    await db.collection('emailQueue').doc(emailId).update({
-      status: 'approved',
-      approvedAt: timestamp,
-      updatedAt: timestamp
-    });
-    log.info('Email approved in Firebase', { emailId });
+    await db.collection('emailQueue').doc(emailId).update(auditInfo);
+    log.info('Email approved in Firebase', { emailId, approvedBy: context.userId });
     return getEmailDraft(emailId);
   } else {
     const localDb = await loadLocalDb();
@@ -589,32 +597,39 @@ export async function approveEmail(emailId) {
 
     localDb.emailQueue[index] = {
       ...localDb.emailQueue[index],
-      status: 'approved',
-      approvedAt: timestamp,
-      updatedAt: timestamp
+      ...auditInfo
     };
 
     await saveLocalDb(localDb);
-    log.info('Email approved locally', { emailId });
+    log.info('Email approved locally', { emailId, approvedBy: context.userId });
     return localDb.emailQueue[index];
   }
 }
 
 /**
  * Reject an email
+ * @param {string} emailId - Email ID
+ * @param {string} reason - Rejection reason
+ * @param {Object} context - User context with userId, email, name
  */
-export async function rejectEmail(emailId, reason = null) {
+export async function rejectEmail(emailId, reason = null, context = {}) {
   const timestamp = new Date().toISOString();
+
+  // Build audit trail info
+  const auditInfo = {
+    status: 'rejected',
+    rejectedAt: timestamp,
+    rejectedBy: context.userId || null,
+    rejectedByEmail: context.email || null,
+    rejectedByName: context.name || null,
+    rejectionReason: reason,
+    updatedAt: timestamp
+  };
 
   if (isFirebaseEnabled()) {
     const db = getFirestore();
-    await db.collection('emailQueue').doc(emailId).update({
-      status: 'rejected',
-      rejectedAt: timestamp,
-      rejectionReason: reason,
-      updatedAt: timestamp
-    });
-    log.info('Email rejected in Firebase', { emailId, reason });
+    await db.collection('emailQueue').doc(emailId).update(auditInfo);
+    log.info('Email rejected in Firebase', { emailId, reason, rejectedBy: context.userId });
     return getEmailDraft(emailId);
   } else {
     const localDb = await loadLocalDb();
@@ -626,14 +641,11 @@ export async function rejectEmail(emailId, reason = null) {
 
     localDb.emailQueue[index] = {
       ...localDb.emailQueue[index],
-      status: 'rejected',
-      rejectedAt: timestamp,
-      rejectionReason: reason,
-      updatedAt: timestamp
+      ...auditInfo
     };
 
     await saveLocalDb(localDb);
-    log.info('Email rejected locally', { emailId, reason });
+    log.info('Email rejected locally', { emailId, reason, rejectedBy: context.userId });
     return localDb.emailQueue[index];
   }
 }
@@ -641,7 +653,13 @@ export async function rejectEmail(emailId, reason = null) {
 /**
  * Move email from queue to history after sending
  */
-export async function moveToHistory(emailId, sendResult) {
+/**
+ * Move email from queue to history after sending
+ * @param {string} emailId - Email ID
+ * @param {Object} sendResult - Send result with success, id, error
+ * @param {Object} context - User context with userId, email, name
+ */
+export async function moveToHistory(emailId, sendResult, context = {}) {
   const timestamp = new Date().toISOString();
   const draft = await getEmailDraft(emailId);
 
@@ -653,8 +671,21 @@ export async function moveToHistory(emailId, sendResult) {
     ...draft,
     status: sendResult.success ? 'sent' : 'failed',
     sentAt: timestamp,
+    sentBy: context.userId || null,
+    sentByEmail: context.email || null,
+    sentByName: context.name || null,
     resendId: sendResult.id || null,
-    error: sendResult.error || null
+    error: sendResult.error || null,
+    // Delivery tracking fields (populated by webhook)
+    deliveryStatus: sendResult.success ? 'pending' : 'failed',
+    deliveredAt: null,
+    bouncedAt: null,
+    complainedAt: null,
+    openedAt: null,
+    openCount: 0,
+    clickedAt: null,
+    clickCount: 0,
+    clickedLinks: []
   };
 
   if (isFirebaseEnabled()) {
@@ -663,7 +694,11 @@ export async function moveToHistory(emailId, sendResult) {
     await db.collection('emailHistory').doc(emailId).set(historyRecord);
     // Remove from queue
     await db.collection('emailQueue').doc(emailId).delete();
-    log.info('Email moved to history in Firebase', { emailId, status: historyRecord.status });
+    log.info('Email moved to history in Firebase', {
+      emailId,
+      status: historyRecord.status,
+      sentBy: context.userId
+    });
   } else {
     const localDb = await loadLocalDb();
     // Add to history
@@ -672,7 +707,11 @@ export async function moveToHistory(emailId, sendResult) {
     // Remove from queue
     localDb.emailQueue = (localDb.emailQueue || []).filter(e => e.id !== emailId);
     await saveLocalDb(localDb);
-    log.info('Email moved to history locally', { emailId, status: historyRecord.status });
+    log.info('Email moved to history locally', {
+      emailId,
+      status: historyRecord.status,
+      sentBy: context.userId
+    });
   }
 
   return historyRecord;
@@ -713,6 +752,46 @@ export async function getEmailHistory(filters = {}) {
     }
 
     return history;
+  }
+}
+
+/**
+ * Update an email in history (for webhook tracking updates)
+ * @param {string} emailId - Email ID
+ * @param {Object} updates - Fields to update
+ */
+export async function updateEmailHistory(emailId, updates) {
+  const timestamp = new Date().toISOString();
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('emailHistory').doc(emailId).update({
+      ...updates,
+      updatedAt: timestamp
+    });
+    log.info('Email history updated in Firebase', { emailId, updates: Object.keys(updates) });
+
+    const doc = await db.collection('emailHistory').doc(emailId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  } else {
+    const localDb = await loadLocalDb();
+    localDb.emailHistory = localDb.emailHistory || [];
+
+    const index = localDb.emailHistory.findIndex(e => e.id === emailId);
+    if (index === -1) {
+      throw new Error(`Email not found in history: ${emailId}`);
+    }
+
+    localDb.emailHistory[index] = {
+      ...localDb.emailHistory[index],
+      ...updates,
+      updatedAt: timestamp
+    };
+
+    await saveLocalDb(localDb);
+    log.info('Email history updated locally', { emailId, updates: Object.keys(updates) });
+
+    return localDb.emailHistory[index];
   }
 }
 
@@ -762,6 +841,105 @@ export async function saveEmailConfig(config) {
   }
 
   return emailConfig;
+}
+
+// ==================== FOLLOW-UP SEQUENCE FUNCTIONS ====================
+
+// Default follow-up sequence (days after initial email)
+const DEFAULT_FOLLOW_UP_SEQUENCE = [
+  { day: 3, type: 'followup-1', subject: 'Re: {initialSubject}', template: 'followup1' },
+  { day: 7, type: 'followup-2', subject: '{businessName} website', template: 'followup2' },
+  { day: 12, type: 'followup-3', subject: 'Closing the loop', template: 'followup3' }
+];
+
+const DEFAULT_EXPIRE_DAYS = 14;
+
+/**
+ * Get follow-up sequence for a tenant (or default)
+ * @param {string} tenantId - Tenant ID (optional, uses default if null)
+ * @returns {Promise<Object>} Follow-up sequence configuration
+ */
+export async function getFollowUpSequence(tenantId = null) {
+  const defaults = {
+    steps: DEFAULT_FOLLOW_UP_SEQUENCE,
+    expireDays: DEFAULT_EXPIRE_DAYS,
+    enabled: true
+  };
+
+  if (!tenantId) {
+    return defaults;
+  }
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    const doc = await db.collection('tenantSettings').doc(tenantId).get();
+    if (!doc.exists) return defaults;
+    const data = doc.data();
+    return {
+      steps: data.followUpSequence?.steps || defaults.steps,
+      expireDays: data.followUpSequence?.expireDays ?? defaults.expireDays,
+      enabled: data.followUpSequence?.enabled ?? defaults.enabled
+    };
+  } else {
+    const localDb = await loadLocalDb();
+    const settings = (localDb.tenantSettings || {})[tenantId];
+    if (!settings?.followUpSequence) return defaults;
+    return {
+      steps: settings.followUpSequence.steps || defaults.steps,
+      expireDays: settings.followUpSequence.expireDays ?? defaults.expireDays,
+      enabled: settings.followUpSequence.enabled ?? defaults.enabled
+    };
+  }
+}
+
+/**
+ * Set follow-up sequence for a tenant
+ * @param {string} tenantId - Tenant ID
+ * @param {Object} sequence - Sequence configuration
+ * @param {Array} sequence.steps - Array of {day, type, subject, template}
+ * @param {number} sequence.expireDays - Days until lead expires
+ * @param {boolean} sequence.enabled - Whether sequence is enabled
+ */
+export async function setFollowUpSequence(tenantId, sequence) {
+  const timestamp = new Date().toISOString();
+
+  // Validate sequence steps
+  if (sequence.steps) {
+    for (const step of sequence.steps) {
+      if (typeof step.day !== 'number' || step.day < 1) {
+        throw new Error('Each step must have a positive day number');
+      }
+      if (!step.type || !step.subject) {
+        throw new Error('Each step must have type and subject');
+      }
+    }
+    // Sort by day
+    sequence.steps.sort((a, b) => a.day - b.day);
+  }
+
+  const followUpSequence = {
+    steps: sequence.steps || DEFAULT_FOLLOW_UP_SEQUENCE,
+    expireDays: sequence.expireDays ?? DEFAULT_EXPIRE_DAYS,
+    enabled: sequence.enabled ?? true,
+    updatedAt: timestamp
+  };
+
+  if (isFirebaseEnabled()) {
+    const db = getFirestore();
+    await db.collection('tenantSettings').doc(tenantId).set({
+      followUpSequence
+    }, { merge: true });
+    log.info('Follow-up sequence saved to Firebase', { tenantId });
+  } else {
+    const localDb = await loadLocalDb();
+    localDb.tenantSettings = localDb.tenantSettings || {};
+    localDb.tenantSettings[tenantId] = localDb.tenantSettings[tenantId] || {};
+    localDb.tenantSettings[tenantId].followUpSequence = followUpSequence;
+    await saveLocalDb(localDb);
+    log.info('Follow-up sequence saved locally', { tenantId });
+  }
+
+  return followUpSequence;
 }
 
 // ==================== STATS FUNCTIONS ====================
@@ -1256,9 +1434,13 @@ export default {
   rejectEmail,
   moveToHistory,
   getEmailHistory,
+  updateEmailHistory,
   // Email config
   getEmailConfig,
   saveEmailConfig,
+  // Follow-up sequence
+  getFollowUpSequence,
+  setFollowUpSequence,
   // Stats
   getStats,
   // Analytics

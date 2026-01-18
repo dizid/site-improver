@@ -79,7 +79,7 @@ const HEADLINE_TEMPLATES = {
   ],
   general: [
     '{{businessName}} — {{city}}',
-    'Quality Service You Can Trust',
+    '{{yearsInBusiness}}+ Years in {{city}}',
     'Serving {{city}} Since {{foundedYear}}',
     'Local Business, Personal Service'
   ]
@@ -145,7 +145,7 @@ const FALLBACK_SERVICES = {
   ],
   general: [
     { name: 'Consultation', description: 'Discuss your needs with our team', icon: 'phone' },
-    { name: 'Service', description: 'Quality work you can count on', icon: 'check' },
+    { name: 'Service', description: 'Fast turnaround, fair pricing', icon: 'check' },
     { name: 'Support', description: 'Here when you need us', icon: 'users' },
     { name: 'Follow-up', description: 'Ensuring your satisfaction', icon: 'star' }
   ]
@@ -297,7 +297,7 @@ export function resolveSmartFallbacks(siteData, industry = 'general') {
   const headline = interpolate(headlineTemplate, data);
 
   // Select subheadline from benefits
-  const subheadline = content.benefits?.[0] || 'Quality service you can count on';
+  const subheadline = content.benefits?.[0] || `Your local team in ${data.city || 'your area'}`;
 
   // Get CTA from industry content
   const cta = content.ctaOptions?.[0] || 'Get Started';

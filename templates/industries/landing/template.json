@@ -1,0 +1,80 @@
+{
+  "id": "landing",
+  "name": "Landing Page",
+  "keywords": ["landing", "saas", "startup", "app", "software", "product", "service", "agency", "marketing", "consulting", "course", "webinar", "ebook", "download"],
+
+  "sections": [
+    "header",
+    "hero",
+    "services-grid",
+    "pricing",
+    "faq",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "heroVariant": "centered",
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Transform Your Business Today",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "The all-in-one solution designed to help you grow and succeed",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Get Started Free"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Why Choose Us"
+    },
+    "services_subtitle": {
+      "source": null,
+      "fallback": "Everything you need to succeed"
+    },
+    "pricing_title": {
+      "source": null,
+      "fallback": "Simple, Transparent Pricing"
+    },
+    "pricing_subtitle": {
+      "source": null,
+      "fallback": "Choose the plan that works for you"
+    },
+    "faq_title": {
+      "source": null,
+      "fallback": "Frequently Asked Questions"
+    },
+    "faq_subtitle": {
+      "source": null,
+      "fallback": "Everything you need to know"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    },
+    "testimonials_title": {
+      "source": null,
+      "fallback": "What Our Customers Say"
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#6366f1",
+      "secondary": "#8b5cf6",
+      "accent": "#22d3ee"
+    }
+  }
+}

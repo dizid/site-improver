@@ -9,19 +9,35 @@ import { extractCity, generatePreviewSlug } from './utils.js';
 import { getFeatures } from './config.js';
 import { ImageService, selectHeroImage } from './imageService.js';
 import { validatePreview } from './previewValidator.js';
+import { captureException, addBreadcrumb } from './sentry.js';
 
 const log = logger.child('pipeline');
 
 /**
  * Create an error with step information for tracking
+ * Also captures the error to Sentry with context
  */
-function createPipelineError(message, step, cause = null) {
+function createPipelineError(message, step, cause = null, context = {}) {
   const error = new Error(message);
   error.step = step;
   if (cause) {
     error.cause = cause;
     error.stack = `${error.stack}\nCaused by: ${cause.stack}`;
   }
+
+  // Capture to Sentry with pipeline context
+  captureException(error, {
+    tags: {
+      component: 'pipeline',
+      step
+    },
+    extra: {
+      url: context.url,
+      industry: context.industry,
+      cause: cause?.message
+    }
+  });
+
   return error;
 }
 
@@ -42,21 +58,43 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     error: () => {}
   };
 
-  // 1. Scrape
+  // 1. Scrape (with timeout protection)
   log.info('Step 1: Scraping site...');
   tracker.scraping({ url: targetUrl });
 
+  addBreadcrumb({
+    message: 'Pipeline started',
+    category: 'pipeline',
+    level: 'info',
+    data: { url: targetUrl }
+  });
+
+  const SCRAPE_TIMEOUT_MS = 30000; // 30 second timeout
   let siteData;
   try {
-    siteData = await scrapeSite(targetUrl);
+    siteData = await Promise.race([
+      scrapeSite(targetUrl),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Scraping timed out after ${SCRAPE_TIMEOUT_MS / 1000}s`)),
+          SCRAPE_TIMEOUT_MS
+        )
+      )
+    ]);
     log.info('Site data extracted', {
       business: siteData.businessName || 'Unknown',
       phone: siteData.phone || 'Not found',
       email: siteData.email || 'Not found'
     });
+    addBreadcrumb({
+      message: 'Scrape complete',
+      category: 'pipeline',
+      level: 'info',
+      data: { businessName: siteData.businessName }
+    });
   } catch (error) {
     tracker.error(error, 'scrape');
-    throw createPipelineError(`Failed to scrape site: ${error.message}`, 'scrape', error);
+    throw createPipelineError(`Failed to scrape site: ${error.message}`, 'scrape', error, { url: targetUrl });
   }
 
   // 2. Enhance images (select hero from scraped or stock photos)
@@ -106,7 +144,7 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     log.info('Template built', { industry });
   } catch (error) {
     tracker.error(error, 'build');
-    throw createPipelineError(`Failed to build template: ${error.message}`, 'build', error);
+    throw createPipelineError(`Failed to build template: ${error.message}`, 'build', error, { url: targetUrl });
   }
 
   // 4. AI Content Generation (optional - graceful degradation)
@@ -192,7 +230,7 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     finalHtml = await builder.buildWithSlots(siteData, polishedSlots);
   } catch (error) {
     tracker.error(error, 'generate');
-    throw createPipelineError(`Failed to generate HTML: ${error.message}`, 'generate', error);
+    throw createPipelineError(`Failed to generate HTML: ${error.message}`, 'generate', error, { url: targetUrl, industry });
   }
 
   // 6. Validate preview quality
@@ -245,7 +283,7 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
   } catch (error) {
     log.error('Failed to save preview', { error: error.message, slug });
     tracker.error(error, 'save');
-    throw createPipelineError(`Failed to save preview: ${error.message}`, 'save', error);
+    throw createPipelineError(`Failed to save preview: ${error.message}`, 'save', error, { url: targetUrl, industry });
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);

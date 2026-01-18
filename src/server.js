@@ -5,11 +5,62 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import * as db from './db.js';
+import * as tenantDb from './db/tenantDb.js';
+import {
+  initSentry,
+  isSentryConfigured,
+  captureException,
+  setUser as setSentryUser,
+  sentryRequestHandler,
+  sentryErrorHandler
+} from './sentry.js';
+import {
+  ROLES,
+  createTenant as createTenantRecord,
+  getTenant as getTenantRecord,
+  getUserByAuthId,
+  createUser,
+  getTenantUsers,
+  createInvitation,
+  acceptInvitation,
+  getTenantInvitations,
+  revokeInvitation,
+  hasPermission
+} from './db/tenants.js';
 import { OutreachManager } from './outreach.js';
 import logger from './logger.js';
 import { CONFIG, validateStartup } from './config.js';
 import { validateUrl, validateEmail } from './utils.js';
 import { pipelineEvents, PIPELINE_STAGES } from './pipelineEvents.js';
+import {
+  initClerkMiddleware,
+  requireAuth,
+  optionalAuth,
+  getUserContext,
+  generalLimiter,
+  pipelineLimiter,
+  discoveryLimiter,
+  emailLimiter,
+  initAuditLog,
+  logAudit,
+  AUDIT_ACTIONS,
+  isAuthConfigured
+} from './auth/index.js';
+import {
+  isStripeConfigured,
+  getAvailablePlans,
+  startCheckout,
+  getBillingPortal,
+  getSubscriptionInfo,
+  cancelTenantSubscription,
+  createTenant,
+  getTenant,
+  handleWebhook,
+  METRICS,
+  incrementUsage,
+  enforceQuota,
+  getUsageSummary
+} from './billing/index.js';
 
 const log = logger.child('server');
 
@@ -55,36 +106,82 @@ const __dirname = import.meta.url
 
 export function createServer(config = {}) {
   const app = express();
-  
-  app.use(cors());
+
+  // Initialize Sentry error tracking (if configured)
+  const sentryEnabled = initSentry();
+  if (sentryEnabled) {
+    // Sentry request handler must be the first middleware
+    app.use(sentryRequestHandler());
+    log.info('Sentry error tracking enabled');
+  }
+
+  // CORS configuration - restrict to known origins
+  const corsOptions = {
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      if (CONFIG.server.corsOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        log.warn('CORS blocked request from:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  };
+  app.use(cors(corsOptions));
   app.use(express.json());
-  
+
+  // Initialize authentication (Clerk)
+  app.use(initClerkMiddleware());
+
+  // Initialize audit logging
+  initAuditLog();
+
+  // Apply general rate limiting to all API routes
+  app.use('/api/', generalLimiter);
+
   // Serve static dashboard files
   app.use(express.static(path.join(__dirname, '../dashboard/dist')));
 
-  // API Routes
+  // ==================== PUBLIC ROUTES (no auth) ====================
+  // Health check and preview routes remain public
+
+  // API Routes (protected)
   
   // Get all deployments with optional filters
-  app.get('/api/deployments', async (req, res) => {
+  // Protected: requires auth for tenant isolation
+  app.get('/api/deployments', optionalAuth(), async (req, res) => {
     try {
       const { status, search, sort = 'createdAt', order = 'desc' } = req.query;
-      let deployments = await db.getDeployments();
-      
+      const context = getUserContext(req);
+
+      // Use tenant-aware query if authenticated
+      let deployments;
+      if (context.tenantId) {
+        deployments = await tenantDb.getDeployments(context);
+      } else {
+        deployments = await db.getDeployments();
+      }
+
       // Filter by status
       if (status && status !== 'all') {
         deployments = deployments.filter(d => d.status === status);
       }
-      
+
       // Search
       if (search) {
         const s = search.toLowerCase();
-        deployments = deployments.filter(d => 
+        deployments = deployments.filter(d =>
           d.businessName?.toLowerCase().includes(s) ||
           d.email?.toLowerCase().includes(s) ||
           d.industry?.toLowerCase().includes(s)
         );
       }
-      
+
       // Sort
       deployments.sort((a, b) => {
         const aVal = a[sort] || '';
@@ -92,7 +189,7 @@ export function createServer(config = {}) {
         const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
         return order === 'desc' ? -cmp : cmp;
       });
-      
+
       res.json(deployments);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -100,17 +197,23 @@ export function createServer(config = {}) {
   });
 
   // Get stats (uses new db.getStats if available)
-  app.get('/api/stats', async (req, res) => {
+  // Protected: requires auth for tenant isolation
+  app.get('/api/stats', optionalAuth(), async (req, res) => {
     try {
-      // Try the new stats function first
-      if (db.getStats) {
+      const context = getUserContext(req);
+
+      // Get tenant-specific deployments
+      let deployments;
+      if (context.tenantId) {
+        deployments = await tenantDb.getDeployments(context);
+      } else if (db.getStats) {
+        // Try the new stats function for global stats
         const stats = await db.getStats();
         res.json(stats);
         return;
+      } else {
+        deployments = await db.getDeployments();
       }
-
-      // Fallback to legacy stats calculation
-      const deployments = await db.getDeployments();
 
       const stats = {
         totalLeads: deployments.length,
@@ -156,16 +259,24 @@ export function createServer(config = {}) {
   // ==================== LEADS API ====================
 
   // Get all leads
-  app.get('/api/leads', async (req, res) => {
+  // Protected: requires auth for tenant isolation
+  app.get('/api/leads', optionalAuth(), async (req, res) => {
     try {
       const { status, industry, search, limit } = req.query;
+      const context = getUserContext(req);
       const filters = {};
 
       if (status && status !== 'all') filters.status = status;
       if (industry) filters.industry = industry;
       if (limit) filters.limit = parseInt(limit);
 
-      let leads = await db.getLeads(filters);
+      // Use tenant-aware query if authenticated
+      let leads;
+      if (context.tenantId) {
+        leads = await tenantDb.getLeads(context, filters);
+      } else {
+        leads = await db.getLeads(filters);
+      }
 
       // Search filter (applied after db query for flexibility)
       if (search) {
@@ -185,9 +296,19 @@ export function createServer(config = {}) {
   });
 
   // Get single lead
-  app.get('/api/leads/:leadId', async (req, res) => {
+  // Protected: requires auth for tenant isolation
+  app.get('/api/leads/:leadId', optionalAuth(), async (req, res) => {
     try {
-      const lead = await db.getLead(req.params.leadId);
+      const context = getUserContext(req);
+
+      // Use tenant-aware query if authenticated
+      let lead;
+      if (context.tenantId) {
+        lead = await tenantDb.getLead(context, req.params.leadId);
+      } else {
+        lead = await db.getLead(req.params.leadId);
+      }
+
       if (!lead) {
         return res.status(404).json({ error: 'Lead not found' });
       }
@@ -198,9 +319,11 @@ export function createServer(config = {}) {
   });
 
   // Create lead (for manual entry)
-  app.post('/api/leads', async (req, res) => {
+  // Protected: requires auth for tenant association
+  app.post('/api/leads', optionalAuth(), async (req, res) => {
     try {
       const { url, businessName, email, phone, industry, country } = req.body;
+      const context = getUserContext(req);
 
       // Validate URL
       const urlResult = validateUrl(url);
@@ -216,14 +339,27 @@ export function createServer(config = {}) {
         }
       }
 
-      const lead = await db.createLead({
-        url: urlResult.normalized,
-        businessName,
-        email,
-        phone,
-        industry,
-        country
-      });
+      // Use tenant-aware save if authenticated
+      let lead;
+      if (context.tenantId) {
+        lead = await tenantDb.saveLead(context, {
+          url: urlResult.normalized,
+          businessName,
+          email,
+          phone,
+          industry,
+          country
+        });
+      } else {
+        lead = await db.createLead({
+          url: urlResult.normalized,
+          businessName,
+          email,
+          phone,
+          industry,
+          country
+        });
+      }
 
       res.status(201).json(lead);
     } catch (error) {
@@ -232,9 +368,11 @@ export function createServer(config = {}) {
   });
 
   // Update lead
-  app.patch('/api/leads/:leadId', async (req, res) => {
+  // Protected: requires auth + tenant isolation
+  app.patch('/api/leads/:leadId', requireAuth(), async (req, res) => {
     try {
       const { status, notes, businessName, email, phone, industry } = req.body;
+      const context = getUserContext(req);
       const updates = {};
 
       if (status) updates.status = status;
@@ -244,7 +382,14 @@ export function createServer(config = {}) {
       if (phone) updates.phone = phone;
       if (industry) updates.industry = industry;
 
-      const lead = await db.updateLead(req.params.leadId, updates);
+      logAudit(AUDIT_ACTIONS.LEAD_UPDATE, req, {
+        resource: 'lead',
+        resourceId: req.params.leadId,
+        metadata: updates
+      });
+
+      // Use tenant-aware update
+      const lead = await tenantDb.updateLead(context, req.params.leadId, updates);
       res.json(lead);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -252,9 +397,18 @@ export function createServer(config = {}) {
   });
 
   // Delete lead
-  app.delete('/api/leads/:leadId', async (req, res) => {
+  // Protected: requires auth + audit + tenant isolation
+  app.delete('/api/leads/:leadId', requireAuth(), async (req, res) => {
     try {
-      await db.deleteLead(req.params.leadId);
+      const context = getUserContext(req);
+
+      logAudit(AUDIT_ACTIONS.LEAD_DELETE, req, {
+        resource: 'lead',
+        resourceId: req.params.leadId
+      });
+
+      // Use tenant-aware delete
+      await tenantDb.deleteLead(context, req.params.leadId);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -262,10 +416,29 @@ export function createServer(config = {}) {
   });
 
   // Send email for lead
-  app.post('/api/leads/:leadId/send-email', async (req, res) => {
+  // Protected: requires auth + email rate limit + quota
+  app.post('/api/leads/:leadId/send-email', requireAuth(), emailLimiter, async (req, res) => {
     try {
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
         return res.status(400).json({ error: 'Email not configured' });
+      }
+
+      const context = getUserContext(req);
+
+      // Check email quota
+      const tenant = await getTenant(context.tenantId);
+      const planId = tenant?.planId || 'starter';
+      try {
+        await enforceQuota(context.tenantId, METRICS.EMAILS_SENT, planId);
+      } catch (quotaError) {
+        if (quotaError.code === 'QUOTA_EXCEEDED') {
+          return res.status(402).json({
+            error: quotaError.message,
+            code: 'QUOTA_EXCEEDED',
+            quota: quotaError.quota
+          });
+        }
+        throw quotaError;
       }
 
       const lead = await db.getLead(req.params.leadId);
@@ -273,12 +446,21 @@ export function createServer(config = {}) {
         return res.status(404).json({ error: 'Lead not found' });
       }
 
+      logAudit(AUDIT_ACTIONS.EMAIL_SEND, req, {
+        resource: 'lead',
+        resourceId: req.params.leadId,
+        metadata: { to: lead.email }
+      });
+
       const outreach = new OutreachManager({
         resendApiKey: process.env.RESEND_API_KEY,
         fromEmail: process.env.FROM_EMAIL
       });
 
       await outreach.sendInitialOutreach(lead);
+
+      // Increment usage
+      await incrementUsage(context.tenantId, METRICS.EMAILS_SENT);
 
       // Update lead status
       await db.updateLead(req.params.leadId, { status: 'emailing' });
@@ -291,9 +473,19 @@ export function createServer(config = {}) {
   });
 
   // Get single deployment
-  app.get('/api/deployments/:siteId', async (req, res) => {
+  // Protected: requires auth for tenant isolation
+  app.get('/api/deployments/:siteId', optionalAuth(), async (req, res) => {
     try {
-      const deployment = await db.getDeployment(req.params.siteId);
+      const context = getUserContext(req);
+
+      // Use tenant-aware query if authenticated
+      let deployment;
+      if (context.tenantId) {
+        deployment = await tenantDb.getDeployment(context, req.params.siteId);
+      } else {
+        deployment = await db.getDeployment(req.params.siteId);
+      }
+
       if (!deployment) {
         return res.status(404).json({ error: 'Deployment not found' });
       }
@@ -304,15 +496,24 @@ export function createServer(config = {}) {
   });
 
   // Update deployment status
-  app.patch('/api/deployments/:siteId', async (req, res) => {
+  // Protected: requires auth + tenant isolation
+  app.patch('/api/deployments/:siteId', requireAuth(), async (req, res) => {
     try {
       const { status, notes } = req.body;
+      const context = getUserContext(req);
       const updates = {};
-      
+
       if (status) updates.status = status;
       if (notes !== undefined) updates.notes = notes;
-      
-      const deployment = await db.updateDeployment(req.params.siteId, updates);
+
+      logAudit(AUDIT_ACTIONS.DEPLOYMENT_UPDATE, req, {
+        resource: 'deployment',
+        resourceId: req.params.siteId,
+        metadata: updates
+      });
+
+      // Use tenant-aware update
+      const deployment = await tenantDb.updateDeployment(context, req.params.siteId, updates);
       res.json(deployment);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -320,9 +521,18 @@ export function createServer(config = {}) {
   });
 
   // Delete deployment
-  app.delete('/api/deployments/:siteId', async (req, res) => {
+  // Protected: requires auth + audit + tenant isolation
+  app.delete('/api/deployments/:siteId', requireAuth(), async (req, res) => {
     try {
-      await db.deleteDeployment(req.params.siteId);
+      const context = getUserContext(req);
+
+      logAudit(AUDIT_ACTIONS.DEPLOYMENT_DELETE, req, {
+        resource: 'deployment',
+        resourceId: req.params.siteId
+      });
+
+      // Use tenant-aware delete
+      await tenantDb.deleteDeployment(context, req.params.siteId);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -330,24 +540,52 @@ export function createServer(config = {}) {
   });
 
   // Send outreach email
-  app.post('/api/deployments/:siteId/send-email', async (req, res) => {
+  // Protected: requires auth + email rate limit + quota
+  app.post('/api/deployments/:siteId/send-email', requireAuth(), emailLimiter, async (req, res) => {
     try {
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
         return res.status(400).json({ error: 'Email not configured' });
       }
-      
+
+      const context = getUserContext(req);
+
+      // Check email quota
+      const tenant = await getTenant(context.tenantId);
+      const planId = tenant?.planId || 'starter';
+      try {
+        await enforceQuota(context.tenantId, METRICS.EMAILS_SENT, planId);
+      } catch (quotaError) {
+        if (quotaError.code === 'QUOTA_EXCEEDED') {
+          return res.status(402).json({
+            error: quotaError.message,
+            code: 'QUOTA_EXCEEDED',
+            quota: quotaError.quota
+          });
+        }
+        throw quotaError;
+      }
+
       const deployment = await db.getDeployment(req.params.siteId);
       if (!deployment) {
         return res.status(404).json({ error: 'Deployment not found' });
       }
-      
+
+      logAudit(AUDIT_ACTIONS.EMAIL_SEND, req, {
+        resource: 'deployment',
+        resourceId: req.params.siteId,
+        metadata: { to: deployment.email }
+      });
+
       const outreach = new OutreachManager({
         resendApiKey: process.env.RESEND_API_KEY,
         fromEmail: process.env.FROM_EMAIL
       });
-      
+
       await outreach.sendInitialOutreach(deployment);
-      
+
+      // Increment usage
+      await incrementUsage(context.tenantId, METRICS.EMAILS_SENT);
+
       const updated = await db.getDeployment(req.params.siteId);
       res.json(updated);
     } catch (error) {
@@ -356,18 +594,42 @@ export function createServer(config = {}) {
   });
 
   // Send follow-up email
-  app.post('/api/deployments/:siteId/send-followup', async (req, res) => {
+  // Protected: requires auth + email rate limit + quota
+  app.post('/api/deployments/:siteId/send-followup', requireAuth(), emailLimiter, async (req, res) => {
     try {
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
         return res.status(400).json({ error: 'Email not configured' });
       }
 
+      const context = getUserContext(req);
       const { attempt = 1 } = req.body;
+
+      // Check email quota
+      const tenant = await getTenant(context.tenantId);
+      const planId = tenant?.planId || 'starter';
+      try {
+        await enforceQuota(context.tenantId, METRICS.EMAILS_SENT, planId);
+      } catch (quotaError) {
+        if (quotaError.code === 'QUOTA_EXCEEDED') {
+          return res.status(402).json({
+            error: quotaError.message,
+            code: 'QUOTA_EXCEEDED',
+            quota: quotaError.quota
+          });
+        }
+        throw quotaError;
+      }
 
       const deployment = await db.getDeployment(req.params.siteId);
       if (!deployment) {
         return res.status(404).json({ error: 'Deployment not found' });
       }
+
+      logAudit(AUDIT_ACTIONS.EMAIL_SEND, req, {
+        resource: 'deployment',
+        resourceId: req.params.siteId,
+        metadata: { type: 'followup', attempt, to: deployment.email }
+      });
 
       const outreach = new OutreachManager({
         resendApiKey: process.env.RESEND_API_KEY,
@@ -375,6 +637,9 @@ export function createServer(config = {}) {
       });
 
       await outreach.sendFollowUp(deployment, attempt);
+
+      // Increment usage
+      await incrementUsage(context.tenantId, METRICS.EMAILS_SENT);
 
       const updated = await db.getDeployment(req.params.siteId);
       res.json(updated);
@@ -427,16 +692,44 @@ export function createServer(config = {}) {
   });
 
   // Approve email
-  app.post('/api/emails/:emailId/approve', async (req, res) => {
+  // Protected: requires auth + email rate limit + audit + quota
+  app.post('/api/emails/:emailId/approve', requireAuth(), emailLimiter, async (req, res) => {
     try {
       const { sendNow } = req.body;
+      const context = getUserContext(req);
 
-      const email = await db.approveEmail(req.params.emailId);
+      // Audit log email approval
+      logAudit(AUDIT_ACTIONS.EMAIL_APPROVE, req, {
+        resource: 'email',
+        resourceId: req.params.emailId,
+        metadata: { sendNow }
+      });
+
+      // Pass user context for audit trail
+      const email = await db.approveEmail(req.params.emailId, context);
 
       // Optionally send immediately after approval
       if (sendNow) {
         if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
           return res.status(400).json({ error: 'Email not configured' });
+        }
+
+        // Check email quota before sending
+        const tenant = await getTenant(context.tenantId);
+        const planId = tenant?.planId || 'starter';
+        try {
+          await enforceQuota(context.tenantId, METRICS.EMAILS_SENT, planId);
+        } catch (quotaError) {
+          if (quotaError.code === 'QUOTA_EXCEEDED') {
+            return res.status(402).json({
+              error: quotaError.message,
+              code: 'QUOTA_EXCEEDED',
+              quota: quotaError.quota,
+              approved: true,
+              sent: false
+            });
+          }
+          throw quotaError;
         }
 
         const outreach = new OutreachManager({
@@ -445,6 +738,14 @@ export function createServer(config = {}) {
         });
 
         await outreach.sendFromQueue(req.params.emailId);
+
+        // Increment usage
+        await incrementUsage(context.tenantId, METRICS.EMAILS_SENT);
+
+        logAudit(AUDIT_ACTIONS.EMAIL_SEND, req, {
+          resource: 'email',
+          resourceId: req.params.emailId
+        });
         return res.json({ approved: true, sent: true });
       }
 
@@ -455,10 +756,20 @@ export function createServer(config = {}) {
   });
 
   // Reject email
-  app.post('/api/emails/:emailId/reject', async (req, res) => {
+  // Protected: requires auth + audit
+  app.post('/api/emails/:emailId/reject', requireAuth(), async (req, res) => {
     try {
       const { reason } = req.body;
-      const email = await db.rejectEmail(req.params.emailId, reason);
+      const context = getUserContext(req);
+
+      logAudit(AUDIT_ACTIONS.EMAIL_REJECT, req, {
+        resource: 'email',
+        resourceId: req.params.emailId,
+        metadata: { reason }
+      });
+
+      // Pass user context for audit trail
+      const email = await db.rejectEmail(req.params.emailId, reason, context);
       res.json({ rejected: true, email });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -466,11 +777,35 @@ export function createServer(config = {}) {
   });
 
   // Send approved email from queue
-  app.post('/api/emails/:emailId/send', async (req, res) => {
+  // Protected: requires auth + email rate limit + audit + quota
+  app.post('/api/emails/:emailId/send', requireAuth(), emailLimiter, async (req, res) => {
     try {
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) {
         return res.status(400).json({ error: 'Email not configured' });
       }
+
+      const context = getUserContext(req);
+
+      // Check email quota
+      const tenant = await getTenant(context.tenantId);
+      const planId = tenant?.planId || 'starter';
+      try {
+        await enforceQuota(context.tenantId, METRICS.EMAILS_SENT, planId);
+      } catch (quotaError) {
+        if (quotaError.code === 'QUOTA_EXCEEDED') {
+          return res.status(402).json({
+            error: quotaError.message,
+            code: 'QUOTA_EXCEEDED',
+            quota: quotaError.quota
+          });
+        }
+        throw quotaError;
+      }
+
+      logAudit(AUDIT_ACTIONS.EMAIL_SEND, req, {
+        resource: 'email',
+        resourceId: req.params.emailId
+      });
 
       const outreach = new OutreachManager({
         resendApiKey: process.env.RESEND_API_KEY,
@@ -478,6 +813,10 @@ export function createServer(config = {}) {
       });
 
       const result = await outreach.sendFromQueue(req.params.emailId);
+
+      // Increment usage
+      await incrementUsage(context.tenantId, METRICS.EMAILS_SENT);
+
       res.json({ sent: true, result });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -495,9 +834,18 @@ export function createServer(config = {}) {
   });
 
   // Update email config
-  app.patch('/api/config/email', async (req, res) => {
+  // Protected: requires auth + audit (admin action)
+  app.patch('/api/config/email', requireAuth(), async (req, res) => {
     try {
       const { autoSendEnabled, requireApproval } = req.body;
+
+      // Audit log config change
+      logAudit(AUDIT_ACTIONS.CONFIG_UPDATE, req, {
+        resource: 'config',
+        resourceId: 'email',
+        metadata: { autoSendEnabled, requireApproval }
+      });
+
       const config = await db.saveEmailConfig({
         autoSendEnabled,
         requireApproval
@@ -507,6 +855,54 @@ export function createServer(config = {}) {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // ==================== FOLLOW-UP SEQUENCE API ====================
+
+  // Get follow-up sequence for current tenant
+  app.get('/api/settings/follow-up-sequence', requireAuth(), asyncHandler(async (req, res) => {
+    const context = req.user;
+    const sequence = await db.getFollowUpSequence(context.tenantId);
+    res.json(sequence);
+  }));
+
+  // Update follow-up sequence for current tenant
+  app.put('/api/settings/follow-up-sequence', requireAuth(), asyncHandler(async (req, res) => {
+    const context = req.user;
+    const { steps, expireDays, enabled } = req.body;
+
+    // Audit log the change
+    logAudit(AUDIT_ACTIONS.CONFIG_UPDATE, req, {
+      resource: 'config',
+      resourceId: 'follow-up-sequence',
+      metadata: { steps: steps?.length, expireDays, enabled }
+    });
+
+    const sequence = await db.setFollowUpSequence(context.tenantId, {
+      steps,
+      expireDays,
+      enabled
+    });
+
+    res.json(sequence);
+  }));
+
+  // Reset follow-up sequence to defaults
+  app.post('/api/settings/follow-up-sequence/reset', requireAuth(), asyncHandler(async (req, res) => {
+    const context = req.user;
+
+    // Audit log the reset
+    logAudit(AUDIT_ACTIONS.CONFIG_UPDATE, req, {
+      resource: 'config',
+      resourceId: 'follow-up-sequence',
+      metadata: { action: 'reset' }
+    });
+
+    // Get default sequence and save it
+    const defaultSequence = await db.getFollowUpSequence(null);
+    const sequence = await db.setFollowUpSequence(context.tenantId, defaultSequence);
+
+    res.json(sequence);
+  }));
 
   // ==================== PREVIEW API ====================
 
@@ -749,13 +1145,21 @@ export function createServer(config = {}) {
   }));
 
   // Mark as converted (customer paid)
-  app.post('/api/deployments/:siteId/convert', asyncHandler(async (req, res) => {
+  // Protected: requires auth + audit
+  app.post('/api/deployments/:siteId/convert', requireAuth(), asyncHandler(async (req, res) => {
     const { amount, notes } = req.body;
 
     const deployment = await db.getDeployment(req.params.siteId);
     if (!deployment) {
       throw ApiError.notFound('Deployment not found');
     }
+
+    // Audit log conversion
+    logAudit(AUDIT_ACTIONS.DEPLOYMENT_CONVERT, req, {
+      resource: 'deployment',
+      resourceId: req.params.siteId,
+      metadata: { amount, businessName: deployment.businessName }
+    });
 
     const updates = {
       status: 'converted',
@@ -771,15 +1175,478 @@ export function createServer(config = {}) {
     res.json(updated);
   }));
 
+  // ==================== BILLING ====================
+
+  // Get available plans
+  app.get('/api/billing/plans', (req, res) => {
+    res.json(getAvailablePlans());
+  });
+
+  // Get subscription status for current tenant
+  app.get('/api/billing/subscription', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const info = await getSubscriptionInfo(context.tenantId);
+    res.json(info);
+  }));
+
+  // Get usage summary for current tenant
+  app.get('/api/billing/usage', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const tenant = await getTenant(context.tenantId);
+    const planId = tenant?.planId || 'starter';
+    const usage = await getUsageSummary(context.tenantId, planId);
+    res.json(usage);
+  }));
+
+  // Start checkout for a plan
+  app.post('/api/billing/checkout', requireAuth(), asyncHandler(async (req, res) => {
+    if (!isStripeConfigured()) {
+      throw ApiError.badRequest('Billing not configured');
+    }
+
+    const { planId } = req.body;
+    if (!planId) {
+      throw ApiError.badRequest('Plan ID is required');
+    }
+
+    const context = getUserContext(req);
+
+    // Ensure tenant exists
+    let tenant = await getTenant(context.tenantId);
+    if (!tenant) {
+      tenant = await createTenant(
+        context.tenantId,
+        req.auth?.sessionClaims?.email || 'unknown@example.com',
+        req.auth?.sessionClaims?.name || 'Unknown'
+      );
+    }
+
+    const returnUrl = req.headers.origin || 'http://localhost:5173';
+    const checkout = await startCheckout(context.tenantId, planId, `${returnUrl}/dashboard`);
+
+    res.json(checkout);
+  }));
+
+  // Get billing portal URL
+  app.get('/api/billing/portal', requireAuth(), asyncHandler(async (req, res) => {
+    if (!isStripeConfigured()) {
+      throw ApiError.badRequest('Billing not configured');
+    }
+
+    const context = getUserContext(req);
+    const returnUrl = req.headers.origin || 'http://localhost:5173';
+    const portalUrl = await getBillingPortal(context.tenantId, `${returnUrl}/dashboard`);
+
+    res.json({ url: portalUrl });
+  }));
+
+  // Cancel subscription
+  app.post('/api/billing/cancel', requireAuth(), asyncHandler(async (req, res) => {
+    if (!isStripeConfigured()) {
+      throw ApiError.badRequest('Billing not configured');
+    }
+
+    const { immediately = false } = req.body;
+    const context = getUserContext(req);
+
+    logAudit(AUDIT_ACTIONS.CONFIG_UPDATE, req, {
+      resource: 'subscription',
+      metadata: { action: 'cancel', immediately }
+    });
+
+    const tenant = await cancelTenantSubscription(context.tenantId, immediately);
+    res.json({ status: tenant.status });
+  }));
+
+  // Get spending summary (usage + overages + cap status)
+  app.get('/api/billing/spending', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const tenant = await getTenant(context.tenantId);
+    const planId = tenant?.planId || 'starter';
+
+    const { getSpendingSummary } = await import('./billing/usage.js');
+    const summary = await getSpendingSummary(context.tenantId, planId);
+    res.json(summary);
+  }));
+
+  // Get/set spending cap
+  app.get('/api/billing/spending-cap', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const { getSpendingCap, checkSpendingCap } = await import('./billing/usage.js');
+
+    const tenant = await getTenant(context.tenantId);
+    const planId = tenant?.planId || 'starter';
+
+    const cap = await getSpendingCap(context.tenantId);
+    const status = await checkSpendingCap(context.tenantId, planId);
+
+    res.json({
+      capCents: cap,
+      capDollars: cap / 100,
+      ...status
+    });
+  }));
+
+  app.post('/api/billing/spending-cap', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const { capDollars, capCents } = req.body;
+
+    if (capDollars === undefined && capCents === undefined) {
+      throw ApiError.badRequest('capDollars or capCents is required');
+    }
+
+    const cap = capCents || Math.round(capDollars * 100);
+
+    if (cap < 0) {
+      throw ApiError.badRequest('Cap must be positive');
+    }
+
+    logAudit(AUDIT_ACTIONS.CONFIG_UPDATE, req, {
+      resource: 'spending_cap',
+      metadata: { capCents: cap, capDollars: cap / 100 }
+    });
+
+    const { setSpendingCap } = await import('./billing/usage.js');
+    await setSpendingCap(context.tenantId, cap);
+
+    res.json({ success: true, capCents: cap, capDollars: cap / 100 });
+  }));
+
+  // Get spending alerts
+  app.get('/api/billing/alerts', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const tenant = await getTenant(context.tenantId);
+    const planId = tenant?.planId || 'starter';
+
+    const { checkSpendingAlerts, getPendingAlerts } = await import('./billing/usage.js');
+
+    // Check for new alerts
+    const newAlerts = await checkSpendingAlerts(context.tenantId, planId);
+    const pendingAlerts = await getPendingAlerts(context.tenantId);
+
+    res.json({
+      newAlerts,
+      pendingAlerts
+    });
+  }));
+
+  // Stripe webhook endpoint (no auth - uses signature verification)
+  app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyncHandler(async (req, res) => {
+    const signature = req.headers['stripe-signature'];
+
+    if (!signature) {
+      throw ApiError.badRequest('Missing Stripe signature');
+    }
+
+    const result = await handleWebhook(req.body, signature);
+    res.json(result);
+  }));
+
+  // Resend webhook endpoint for email delivery tracking (no auth - uses signature verification)
+  app.post('/api/webhooks/resend', express.json(), asyncHandler(async (req, res) => {
+    const { verifyWebhookSignature, handleResendWebhook } = await import('./webhooks/resend.js');
+    const db = await import('./db.js');
+
+    const signature = req.headers['resend-signature'];
+    const rawBody = JSON.stringify(req.body);
+
+    // Verify webhook signature
+    const secret = process.env.RESEND_WEBHOOK_SECRET;
+    if (secret && !verifyWebhookSignature(rawBody, signature, secret)) {
+      throw new ApiError('Invalid webhook signature', 401, 'UNAUTHORIZED');
+    }
+
+    // Process the webhook
+    const result = await handleResendWebhook(req.body, db);
+
+    if (!result.success && result.reason !== 'email_not_found') {
+      log.warn('Resend webhook processing failed', result);
+    }
+
+    res.json(result);
+  }));
+
+  // Get email delivery statistics
+  app.get('/api/email/stats', requireAuth(), asyncHandler(async (req, res) => {
+    const { getEmailDeliveryStats } = await import('./webhooks/resend.js');
+    const db = await import('./db.js');
+    const context = getUserContext(req);
+
+    const stats = await getEmailDeliveryStats(db, context.tenantId);
+    res.json(stats || { error: 'Failed to fetch stats' });
+  }));
+
+  // ==================== TEAM MANAGEMENT ====================
+
+  // Get current tenant info
+  app.get('/api/team', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const tenant = await getTenantRecord(context.tenantId);
+
+    if (!tenant) {
+      // Create tenant on first access
+      const newTenant = await createTenantRecord({
+        name: context.email?.split('@')[0] || 'My Team',
+        plan: 'free'
+      });
+
+      // Create user as owner
+      await createUser({
+        tenantId: newTenant.id,
+        email: context.email,
+        name: context.name,
+        role: ROLES.OWNER,
+        authProviderId: context.userId
+      });
+
+      return res.json(newTenant);
+    }
+
+    res.json(tenant);
+  }));
+
+  // Update tenant settings
+  app.patch('/api/team', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const { name, settings } = req.body;
+
+    // Check permission
+    const user = await getUserByAuthId(context.userId);
+    if (!user || !hasPermission(user.role, 'settings')) {
+      throw new ApiError('Permission denied', 403, 'FORBIDDEN');
+    }
+
+    const updates = {};
+    if (name) updates.name = name;
+    if (settings) updates.settings = settings;
+
+    logAudit(AUDIT_ACTIONS.CONFIG_UPDATE, req, {
+      resource: 'team',
+      metadata: updates
+    });
+
+    const { updateTenant: updateTenantInfo } = await import('./db/tenants.js');
+    const tenant = await updateTenantInfo(context.tenantId, updates);
+    res.json(tenant);
+  }));
+
+  // Get team members
+  app.get('/api/team/members', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const users = await getTenantUsers(context.tenantId);
+    res.json(users);
+  }));
+
+  // Invite team member
+  app.post('/api/team/invite', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const { email, role = ROLES.MEMBER } = req.body;
+
+    if (!email) {
+      throw ApiError.badRequest('Email is required');
+    }
+
+    // Check permission
+    const user = await getUserByAuthId(context.userId);
+    if (!user || !hasPermission(user.role, 'invite')) {
+      throw new ApiError('Permission denied', 403, 'FORBIDDEN');
+    }
+
+    // Validate role
+    if (!Object.values(ROLES).includes(role)) {
+      throw ApiError.badRequest('Invalid role');
+    }
+
+    // Cannot invite owners
+    if (role === ROLES.OWNER) {
+      throw ApiError.badRequest('Cannot invite as owner');
+    }
+
+    logAudit(AUDIT_ACTIONS.TEAM_INVITE, req, {
+      resource: 'invitation',
+      metadata: { email, role }
+    });
+
+    const invitation = await createInvitation({
+      tenantId: context.tenantId,
+      email,
+      role,
+      invitedBy: user.id
+    });
+
+    // TODO: Send invitation email via Resend
+
+    res.json({
+      success: true,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+        expiresAt: invitation.expiresAt
+      }
+    });
+  }));
+
+  // Get pending invitations
+  app.get('/api/team/invitations', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+
+    // Check permission
+    const user = await getUserByAuthId(context.userId);
+    if (!user || !hasPermission(user.role, 'invite')) {
+      throw new ApiError('Permission denied', 403, 'FORBIDDEN');
+    }
+
+    const invitations = await getTenantInvitations(context.tenantId);
+    res.json(invitations);
+  }));
+
+  // Revoke invitation
+  app.delete('/api/team/invitations/:invitationId', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+
+    // Check permission
+    const user = await getUserByAuthId(context.userId);
+    if (!user || !hasPermission(user.role, 'invite')) {
+      throw new ApiError('Permission denied', 403, 'FORBIDDEN');
+    }
+
+    logAudit(AUDIT_ACTIONS.TEAM_INVITE_REVOKE, req, {
+      resource: 'invitation',
+      resourceId: req.params.invitationId
+    });
+
+    await revokeInvitation(req.params.invitationId);
+    res.json({ success: true });
+  }));
+
+  // Accept invitation (public - uses token)
+  app.post('/api/team/accept-invite', asyncHandler(async (req, res) => {
+    const { token, name, authProviderId } = req.body;
+
+    if (!token) {
+      throw ApiError.badRequest('Invitation token is required');
+    }
+
+    const user = await acceptInvitation(token, {
+      name,
+      authProviderId
+    });
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tenantId: user.tenantId
+      }
+    });
+  }));
+
+  // Update team member role
+  app.patch('/api/team/members/:userId', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+    const { role } = req.body;
+
+    // Check permission (only owner/admin can change roles)
+    const currentUser = await getUserByAuthId(context.userId);
+    if (!currentUser || !hasPermission(currentUser.role, 'settings')) {
+      throw new ApiError('Permission denied', 403, 'FORBIDDEN');
+    }
+
+    // Cannot change owner role
+    if (role === ROLES.OWNER) {
+      throw ApiError.badRequest('Cannot assign owner role');
+    }
+
+    const { updateUser: updateUserInfo, getUser: getUserInfo } = await import('./db/tenants.js');
+    const targetUser = await getUserInfo(req.params.userId);
+
+    if (!targetUser || targetUser.tenantId !== context.tenantId) {
+      throw ApiError.notFound('User not found');
+    }
+
+    // Cannot modify owner
+    if (targetUser.role === ROLES.OWNER) {
+      throw ApiError.badRequest('Cannot modify owner');
+    }
+
+    logAudit(AUDIT_ACTIONS.TEAM_ROLE_CHANGE, req, {
+      resource: 'user',
+      resourceId: req.params.userId,
+      metadata: { oldRole: targetUser.role, newRole: role }
+    });
+
+    const updated = await updateUserInfo(req.params.userId, { role });
+    res.json(updated);
+  }));
+
+  // Remove team member
+  app.delete('/api/team/members/:userId', requireAuth(), asyncHandler(async (req, res) => {
+    const context = getUserContext(req);
+
+    // Check permission
+    const currentUser = await getUserByAuthId(context.userId);
+    if (!currentUser || !hasPermission(currentUser.role, 'settings')) {
+      throw new ApiError('Permission denied', 403, 'FORBIDDEN');
+    }
+
+    const { deleteUser: deleteUserInfo, getUser: getUserInfo } = await import('./db/tenants.js');
+    const targetUser = await getUserInfo(req.params.userId);
+
+    if (!targetUser || targetUser.tenantId !== context.tenantId) {
+      throw ApiError.notFound('User not found');
+    }
+
+    // Cannot remove owner
+    if (targetUser.role === ROLES.OWNER) {
+      throw ApiError.badRequest('Cannot remove owner');
+    }
+
+    // Cannot remove yourself
+    if (targetUser.id === currentUser.id) {
+      throw ApiError.badRequest('Cannot remove yourself');
+    }
+
+    logAudit(AUDIT_ACTIONS.TEAM_MEMBER_REMOVE, req, {
+      resource: 'user',
+      resourceId: req.params.userId
+    });
+
+    await deleteUserInfo(req.params.userId);
+    res.json({ success: true });
+  }));
+
   // ==================== DISCOVERY ====================
 
   // Discover leads by industry + location
-  app.post('/api/discover', asyncHandler(async (req, res) => {
+  // Protected: requires auth + stricter rate limit (external API costs) + quota
+  app.post('/api/discover', requireAuth(), discoveryLimiter, asyncHandler(async (req, res) => {
     const { query, location, limit = 10, autoProcess = false } = req.body;
+    const context = getUserContext(req);
 
     if (!query) {
       throw ApiError.badRequest('Query is required (e.g., "plumbers", "restaurants")');
     }
+
+    // Check quota before discovery
+    const tenant = await getTenant(context.tenantId);
+    const planId = tenant?.planId || 'starter';
+    try {
+      await enforceQuota(context.tenantId, METRICS.LEADS_DISCOVERED, planId);
+    } catch (quotaError) {
+      if (quotaError.code === 'QUOTA_EXCEEDED') {
+        throw new ApiError(quotaError.message, 402, 'QUOTA_EXCEEDED');
+      }
+      throw quotaError;
+    }
+
+    // Audit log discovery start
+    logAudit(AUDIT_ACTIONS.DISCOVERY_START, req, {
+      resource: 'discovery',
+      metadata: { query, location, limit }
+    });
 
     log.info('Starting lead discovery', { query, location, limit });
 
@@ -836,6 +1703,11 @@ export function createServer(config = {}) {
       } catch (err) {
         log.debug('Failed to save lead', { error: err.message });
       }
+    }
+
+    // Increment usage based on leads found
+    if (savedLeads.length > 0) {
+      await incrementUsage(context.tenantId, METRICS.LEADS_DISCOVERED, savedLeads.length);
     }
 
     log.info('Discovery complete', {
@@ -910,12 +1782,40 @@ export function createServer(config = {}) {
   });
 
   // Run pipeline for a URL (async with real-time status)
-  app.post('/api/pipeline', async (req, res) => {
+  // Protected: requires auth + stricter rate limit + quota enforcement
+  app.post('/api/pipeline', requireAuth(), pipelineLimiter, async (req, res) => {
     try {
       const { url, skipPolish, skipEmail } = req.body;
+      const context = getUserContext(req);
+
+      // Check quota before running pipeline
+      const tenant = await getTenant(context.tenantId);
+      const planId = tenant?.planId || 'starter';
+      try {
+        await enforceQuota(context.tenantId, METRICS.PIPELINE_RUNS, planId);
+      } catch (quotaError) {
+        if (quotaError.code === 'QUOTA_EXCEEDED') {
+          return res.status(402).json({
+            error: quotaError.message,
+            code: 'QUOTA_EXCEEDED',
+            quota: quotaError.quota
+          });
+        }
+        throw quotaError;
+      }
 
       // Generate unique job ID for tracking
       const jobId = randomUUID();
+
+      // Audit log pipeline start
+      logAudit(AUDIT_ACTIONS.PIPELINE_START, req, {
+        resource: 'pipeline',
+        resourceId: jobId,
+        metadata: { url, skipPolish, skipEmail }
+      });
+
+      // Increment usage
+      await incrementUsage(context.tenantId, METRICS.PIPELINE_RUNS);
 
       log.info('=== PIPELINE REQUEST RECEIVED ===');
       log.info(`JobId: ${jobId}`);
@@ -1032,6 +1932,11 @@ export function createServer(config = {}) {
 
   // ==================== ERROR MIDDLEWARE ====================
 
+  // Sentry error handler (must be before other error handlers)
+  if (isSentryConfigured()) {
+    app.use(sentryErrorHandler());
+  }
+
   // Centralized error handler
   app.use((err, req, res, next) => {
     // Log the error
@@ -1041,6 +1946,23 @@ export function createServer(config = {}) {
       error: err.message,
       code: err.code,
       stack: err.stack
+    });
+
+    // Capture to Sentry with context (if not already handled by sentryErrorHandler)
+    captureException(err, {
+      tags: {
+        path: req.path,
+        method: req.method
+      },
+      extra: {
+        statusCode: err.statusCode,
+        code: err.code
+      },
+      user: req.user ? {
+        id: req.user.userId,
+        email: req.user.email,
+        tenantId: req.user.tenantId
+      } : undefined
     });
 
     // Determine status code

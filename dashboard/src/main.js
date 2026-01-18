@@ -3,6 +3,8 @@ import { createRouter, createWebHistory } from 'vue-router';
 import App from './App.vue';
 import DashboardView from './views/DashboardView.vue';
 import PreviewView from './views/PreviewView.vue';
+import BillingView from './views/BillingView.vue';
+import TeamView from './views/TeamView.vue';
 import './styles.css';
 
 // Router configuration
@@ -19,6 +21,16 @@ const router = createRouter({
       name: 'preview',
       component: PreviewView
     },
+    {
+      path: '/billing',
+      name: 'billing',
+      component: BillingView
+    },
+    {
+      path: '/team',
+      name: 'team',
+      component: TeamView
+    }
   ]
 });
 

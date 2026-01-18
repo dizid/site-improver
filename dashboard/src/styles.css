@@ -1051,6 +1051,207 @@ body {
   line-height: 1.7;
 }
 
+/* Enhanced Email Preview Modal */
+.email-preview-modal.modal-wide {
+  max-width: 900px;
+}
+
+.modal-header .device-toggle {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+  margin-right: 1rem;
+  background: var(--bg-input);
+  border-radius: var(--radius-md);
+  padding: 0.25rem;
+}
+
+.device-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.device-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.device-btn.active {
+  color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.email-header-fields {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.device-frame-container {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  min-height: 400px;
+}
+
+.device-frame {
+  background: #1a1a1a;
+  border-radius: 20px;
+  padding: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  transition: all var(--transition-normal);
+}
+
+.device-frame.device-desktop {
+  width: 100%;
+  max-width: 800px;
+  border-radius: 12px;
+  padding: 8px 8px 24px 8px;
+}
+
+.device-frame.device-mobile {
+  width: 375px;
+  border-radius: 36px;
+  padding: 16px 12px;
+}
+
+.device-frame.device-mobile::before {
+  content: '';
+  display: block;
+  width: 80px;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  margin: 0 auto 12px;
+}
+
+.device-screen {
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  height: 100%;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.device-mobile .device-screen {
+  border-radius: 4px;
+}
+
+.email-client-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.email-client-from {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sender-avatar {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.sender-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.sender-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #212529;
+}
+
+.sender-email {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.email-client-date {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.email-client-subject {
+  padding: 12px 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.email-client-body {
+  padding: 20px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #212529;
+}
+
+.email-client-body a {
+  color: var(--accent-blue);
+}
+
+.email-client-body p {
+  margin-bottom: 1em;
+}
+
+/* Mobile adjustments for device preview */
+.device-mobile .email-client-header {
+  padding: 10px 12px;
+}
+
+.device-mobile .sender-avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+}
+
+.device-mobile .sender-name {
+  font-size: 13px;
+}
+
+.device-mobile .sender-email {
+  font-size: 11px;
+}
+
+.device-mobile .email-client-subject {
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+.device-mobile .email-client-body {
+  padding: 16px 12px;
+  font-size: 13px;
+}
+
 /* ============================
    INDUSTRY GRID
    ============================ */

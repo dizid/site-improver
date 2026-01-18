@@ -121,7 +121,14 @@ export const CONFIG = {
   server: {
     defaultPort: 3000,
     functionsPort: 9999,
-    corsOrigins: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:9999']
+    // Base CORS origins - production URLs added via CORS_ORIGINS env var
+    corsOrigins: [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://localhost:9999',
+      // Production origins from environment (comma-separated)
+      ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()) : [])
+    ].filter(Boolean)
   },
 
   // Database
@@ -143,6 +150,7 @@ export function getEnvConfig() {
     outscraperApiKey: process.env.OUTSCRAPER_API_KEY,
     googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
     pageSpeedApiKey: process.env.PAGESPEED_API_KEY || process.env.GOOGLE_PLACES_API_KEY,
+    sentryDsn: process.env.SENTRY_DSN,
     leadSource: process.env.LEAD_SOURCE || 'auto', // 'outscraper', 'googlePlaces', or 'auto'
     port: parseInt(process.env.PORT, 10) || CONFIG.server.defaultPort,
     dbPath: process.env.DB_PATH || CONFIG.database.defaultPath,
@@ -165,7 +173,8 @@ export function getFeatures() {
     email: !!(env.resendApiKey && env.fromEmail),
     leadFinder: !!env.outscraperApiKey,
     googlePlaces: !!env.googlePlacesApiKey,
-    pageSpeed: !!env.pageSpeedApiKey
+    pageSpeed: !!env.pageSpeedApiKey,
+    errorTracking: !!env.sentryDsn
   };
 }
 

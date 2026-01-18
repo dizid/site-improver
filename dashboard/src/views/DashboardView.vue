@@ -27,6 +27,8 @@
         <a href="#pipeline" @click="mobileMenuOpen = false">Pipeline</a>
         <a href="#emails" @click="mobileMenuOpen = false">Emails</a>
         <a href="#leads" @click="mobileMenuOpen = false">All Leads</a>
+        <router-link to="/billing" @click="mobileMenuOpen = false">Billing</router-link>
+        <router-link to="/team" @click="mobileMenuOpen = false">Team</router-link>
       </nav>
     </header>
 
@@ -413,25 +415,65 @@
           </div>
         </div>
 
-        <!-- Email Preview Modal -->
+        <!-- Email Preview Modal with Device Toggle -->
         <Teleport to="body">
           <div v-if="emailPreview" class="modal-overlay" @click.self="emailPreview = null">
-            <div class="modal email-preview-modal">
+            <div class="modal email-preview-modal" :class="{ 'modal-wide': previewDevice === 'desktop' }">
               <div class="modal-header">
                 <h3>Email Preview</h3>
+                <div class="device-toggle">
+                  <button
+                    :class="['device-btn', { active: previewDevice === 'desktop' }]"
+                    @click="previewDevice = 'desktop'"
+                    title="Desktop view"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                      <line x1="8" y1="21" x2="16" y2="21"></line>
+                      <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                  </button>
+                  <button
+                    :class="['device-btn', { active: previewDevice === 'mobile' }]"
+                    @click="previewDevice = 'mobile'"
+                    title="Mobile view"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                      <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
                 <button @click="emailPreview = null" class="modal-close">&times;</button>
               </div>
               <div class="modal-body">
-                <div class="preview-field">
-                  <label>To:</label>
-                  <span>{{ emailPreview.to }}</span>
+                <div class="email-header-fields">
+                  <div class="preview-field">
+                    <label>To:</label>
+                    <span>{{ emailPreview.to }}</span>
+                  </div>
+                  <div class="preview-field">
+                    <label>Subject:</label>
+                    <span>{{ emailPreview.subject }}</span>
+                  </div>
                 </div>
-                <div class="preview-field">
-                  <label>Subject:</label>
-                  <span>{{ emailPreview.subject }}</span>
-                </div>
-                <div class="preview-content">
-                  <div class="preview-html" v-html="emailPreview.htmlBody"></div>
+                <div class="device-frame-container">
+                  <div :class="['device-frame', `device-${previewDevice}`]">
+                    <div class="device-screen">
+                      <div class="email-client-header">
+                        <div class="email-client-from">
+                          <span class="sender-avatar">SI</span>
+                          <div class="sender-info">
+                            <span class="sender-name">Site Improver</span>
+                            <span class="sender-email">{{ fromEmail || 'noreply@siteimprover.com' }}</span>
+                          </div>
+                        </div>
+                        <div class="email-client-date">{{ formatDate(emailPreview.createdAt) }}</div>
+                      </div>
+                      <div class="email-client-subject">{{ emailPreview.subject }}</div>
+                      <div class="email-client-body" v-html="emailPreview.htmlBody"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="modal-footer" v-if="emailPreview.status === 'draft'">
@@ -676,6 +718,7 @@ const emailQueue = ref([]);
 const emailHistory = ref([]);
 const emailConfig = ref({ autoSendEnabled: false, requireApproval: true });
 const emailPreview = ref(null);
+const previewDevice = ref('desktop');
 const fromEmail = ref('');
 const resendConfigured = ref(false);
 
@@ -765,6 +808,17 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.value = null;
   }, 5000);
+}
+
+function formatDate(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function getBadgeClass(status) {

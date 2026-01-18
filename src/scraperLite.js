@@ -242,24 +242,16 @@ function extractContent($) {
     }
   });
 
-  const services = [];
-  $('section, div, [class*="service"]').each((_, section) => {
-    const heading = $(section).find('h2, h3').first().text().toLowerCase();
-    if (heading.includes('service') || heading.includes('what we') || heading.includes('our ')) {
-      $(section).find('li, h4, [class*="service-item"], [class*="card"] h3').each((_, item) => {
-        const text = $(item).text().trim().replace(/\s+/g, ' ');
-        if (text.length > 2 && text.length < 100 && !services.includes(text)) {
-          services.push(text);
-        }
-      });
-    }
-  });
+  // Extract tables first (needed for pricing table services)
+  const tables = extractTableContent($);
+
+  // Enhanced services extraction
+  const services = extractServices($, tables);
 
   const testimonials = extractTestimonials($);
   const listItems = extractListItems($);
   const faqs = extractFAQs($);
   const blockquotes = extractBlockquotes($);
-  const tables = extractTableContent($);
 
   return {
     headlines: headlines.slice(0, CONFIG.limits.headlines),
@@ -271,6 +263,184 @@ function extractContent($) {
     blockquotes,
     tables
   };
+}
+
+/**
+ * Enhanced services extraction with multiple strategies
+ * Extracts from: service sections, pricing tables, bullet lists, nav menus, CTAs
+ */
+function extractServices($, tables) {
+  const services = new Set();
+  const seenLower = new Set();
+
+  // Helper to add service if valid
+  const addService = (text) => {
+    if (!text) return;
+    const cleaned = text.trim().replace(/\s+/g, ' ');
+    const lower = cleaned.toLowerCase();
+
+    // Skip if too short, too long, or already seen
+    if (cleaned.length < 3 || cleaned.length > 100) return;
+    if (seenLower.has(lower)) return;
+
+    // Skip generic/navigation terms
+    const skipTerms = [
+      'home', 'about', 'about us', 'contact', 'contact us', 'services',
+      'blog', 'news', 'faq', 'faqs', 'gallery', 'portfolio', 'testimonials',
+      'reviews', 'careers', 'login', 'sign up', 'sign in', 'menu',
+      'learn more', 'read more', 'view all', 'see all', 'more info',
+      'privacy', 'privacy policy', 'terms', 'terms of service', 'sitemap'
+    ];
+    if (skipTerms.includes(lower)) return;
+
+    // Skip if starts with common generic patterns
+    if (/^(?:click|call|view|see|learn|get|our|your|the|a|an|we)\s/i.test(cleaned)) return;
+
+    seenLower.add(lower);
+    services.add(cleaned);
+  };
+
+  // Strategy 1: Service sections (original approach, enhanced)
+  const serviceSectionSelectors = [
+    'section, div, [class*="service"]',
+    '[class*="offering"]',
+    '[class*="solution"]',
+    '[class*="expertise"]',
+    '[class*="specialty"]',
+    '[class*="capability"]'
+  ];
+
+  const serviceHeadingKeywords = [
+    'service', 'what we', 'our ', 'offering', 'solution',
+    'expertise', 'specialt', 'capability', 'we do', 'we offer',
+    'we provide', 'how we help', 'areas of'
+  ];
+
+  for (const selector of serviceSectionSelectors) {
+    $(selector).each((_, section) => {
+      const heading = $(section).find('h1, h2, h3').first().text().toLowerCase();
+      const matchesHeading = serviceHeadingKeywords.some(kw => heading.includes(kw));
+
+      if (matchesHeading) {
+        // Extract from list items
+        $(section).find('li').each((_, item) => {
+          // Skip if inside nav
+          if ($(item).closest('nav, .nav, .navigation, .menu').length) return;
+          addService($(item).text());
+        });
+
+        // Extract from headings (h3, h4, h5)
+        $(section).find('h3, h4, h5').each((_, el) => {
+          addService($(el).text());
+        });
+
+        // Extract from cards/items
+        $(section).find('[class*="service-item"], [class*="card"], [class*="item"], [class*="box"]').each((_, item) => {
+          const title = $(item).find('h3, h4, h5, [class*="title"], [class*="heading"]').first().text();
+          addService(title);
+        });
+      }
+    });
+  }
+
+  // Strategy 2: Pricing tables (extract service names)
+  for (const table of tables) {
+    if (table.type === 'pricing' || (table.context && /price|service|plan|package/i.test(table.context))) {
+      // Extract from first column (usually service names)
+      for (const row of table.rows) {
+        if (row[0] && row[0].length > 2) {
+          // Skip if it looks like a price
+          if (!/^\$|^\d+\s*$|per\s+/i.test(row[0])) {
+            addService(row[0]);
+          }
+        }
+      }
+
+      // Also check headers for plan/package names
+      if (table.headers) {
+        for (const header of table.headers) {
+          if (header && !/price|cost|rate|\$/i.test(header.toLowerCase())) {
+            addService(header);
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 3: Button/CTA text (often describes services)
+  $('a.btn, a.button, button, [class*="btn"], [class*="cta"], [role="button"]').each((_, el) => {
+    const text = $(el).text().trim();
+
+    // Extract action-related CTAs that imply services
+    const servicePatterns = [
+      /^(?:get|schedule|book|request)\s+(?:a\s+)?(.+?)(?:\s+(?:now|today|quote|estimate|consultation))?$/i,
+      /^(.+?)\s+(?:service|repair|installation|inspection|cleaning)s?$/i,
+      /^(?:free|affordable|professional)\s+(.+)$/i
+    ];
+
+    for (const pattern of servicePatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        addService(match[1]);
+      }
+    }
+  });
+
+  // Strategy 4: Feature/benefit lists (common service indicators)
+  $('[class*="feature"], [class*="benefit"], [class*="highlight"]').each((_, container) => {
+    $(container).find('h3, h4, h5, [class*="title"], strong').each((_, el) => {
+      const text = $(el).text();
+      // Only if it looks like a service name
+      if (text.length > 3 && text.length < 60 && !/\d{2,}|\$|%|guarantee|warranty/i.test(text)) {
+        addService(text);
+      }
+    });
+  });
+
+  // Strategy 5: Navigation menus (secondary nav often has services)
+  $('nav:not(:first-child), .subnav, .secondary-nav, [class*="services-nav"], ul.services').each((_, nav) => {
+    $(nav).find('a').each((_, el) => {
+      const text = $(el).text().trim();
+      // Only add if looks like a service
+      if (text.length > 3 && text.length < 50) {
+        addService(text);
+      }
+    });
+  });
+
+  // Strategy 6: Service-related links
+  $('a[href*="service"], a[href*="offering"]').each((_, el) => {
+    const text = $(el).text().trim();
+    if (text.length > 3 && text.length < 60) {
+      addService(text);
+    }
+  });
+
+  // Strategy 7: Definition lists (often used for services)
+  $('dl').each((_, dl) => {
+    const context = $(dl).closest('section').find('h2, h3').first().text().toLowerCase();
+    if (context.includes('service') || context.includes('offer') || context.includes('what we')) {
+      $(dl).find('dt').each((_, dt) => {
+        addService($(dt).text());
+      });
+    }
+  });
+
+  // Strategy 8: Icon grids (common service display pattern)
+  $('[class*="icon-grid"], [class*="service-grid"], [class*="features-grid"]').each((_, grid) => {
+    $(grid).find('[class*="item"], [class*="card"], > div, > li').each((_, item) => {
+      const title = $(item).find('h3, h4, h5, [class*="title"], strong').first().text();
+      addService(title);
+    });
+  });
+
+  const result = Array.from(services);
+  log.debug('Extracted services', {
+    count: result.length,
+    services: result.slice(0, 5)
+  });
+
+  return result;
 }
 
 /**

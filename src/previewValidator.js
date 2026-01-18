@@ -2,6 +2,7 @@
 // Preview quality validation - detects empty/broken sections before deployment
 
 import logger from './logger.js';
+import { hasCliche, validateHeadline } from './contentValidator.js';
 
 const log = logger.child('preview-validator');
 
@@ -18,15 +19,61 @@ const SEVERITY = {
  */
 const ISSUE_TYPES = {
   MISSING_HEADLINE: 'missing_headline',
+  CLICHE_HEADLINE: 'cliche_headline',
   MISSING_BUSINESS_NAME: 'missing_business_name',
+  PLACEHOLDER_BUSINESS_NAME: 'placeholder_business_name',
   NO_CONTACT_INFO: 'no_contact_info',
   WEAK_SUBHEADLINE: 'weak_subheadline',
   FEW_SERVICES: 'few_services',
   FEW_WHY_US_POINTS: 'few_why_us_points',
   NO_HERO_IMAGE: 'no_hero_image',
+  BROKEN_HERO_IMAGE: 'broken_hero_image',
   FEW_TESTIMONIALS: 'few_testimonials',
   WEAK_SERVICES: 'weak_services'
 };
+
+/**
+ * Placeholder business names that should be blocked (exact matches)
+ */
+const PLACEHOLDER_NAMES_EXACT = [
+  'unknown',
+  'local business',
+  'your business',
+  'business name',
+  'company name',
+  'my company',
+  'our team',
+  'our company',
+  'untitled',
+  'new business',
+  'test',
+  'test business',
+  'test company',
+  'example',
+  'example business',
+  'example company',
+  'sample',
+  'sample business',
+  'placeholder',
+  'lorem ipsum',
+  'acme',
+  'acme inc',
+  'acme corp'
+];
+
+/**
+ * Partial matches that indicate placeholder names
+ */
+const PLACEHOLDER_NAME_PATTERNS = [
+  /^your\s/i,           // "Your Business", "Your Company"
+  /placeholder/i,       // Contains "placeholder"
+  /lorem\s*ipsum/i,     // Lorem ipsum
+  /\[.*\]/,             // Contains [brackets]
+  /\{.*\}/,             // Contains {braces}
+  /^xxx+$/i,            // Just x's
+  /^test\s*$/i,         // Just "test"
+  /^sample\s*$/i        // Just "sample"
+];
 
 /**
  * PreviewValidator - Validates preview quality before deployment
@@ -90,13 +137,52 @@ export class PreviewValidator {
       });
     }
 
+    // CRITICAL: Headline contains clichés
+    if (headline && hasCliche(headline)) {
+      const validation = validateHeadline(headline, {
+        businessName,
+        city: this.siteData.city || this.siteData.address
+      });
+      const cliches = validation.issues
+        .filter(i => i.type === 'cliche')
+        .map(i => i.text);
+
+      this.issues.push({
+        type: ISSUE_TYPES.CLICHE_HEADLINE,
+        severity: SEVERITY.CRITICAL,
+        message: 'Headline contains clichés that must be replaced',
+        actual: `"${headline}"`,
+        cliches: cliches.slice(0, 3) // Show up to 3 clichés found
+      });
+    }
+
     // CRITICAL: Missing business name
-    if (!businessName || businessName === 'Unknown' || businessName.length < 2) {
+    if (!businessName || businessName.length < 2) {
       this.issues.push({
         type: ISSUE_TYPES.MISSING_BUSINESS_NAME,
         severity: SEVERITY.CRITICAL,
         message: 'Business name is missing or invalid',
         actual: businessName || 'empty'
+      });
+    }
+
+    // CRITICAL: Placeholder business name
+    const nameLower = (businessName || '').toLowerCase().trim();
+
+    // Check exact matches
+    const isExactPlaceholder = PLACEHOLDER_NAMES_EXACT.includes(nameLower);
+
+    // Check pattern matches
+    const matchesPattern = PLACEHOLDER_NAME_PATTERNS.some(pattern =>
+      pattern.test(businessName)
+    );
+
+    if (businessName && (isExactPlaceholder || matchesPattern)) {
+      this.issues.push({
+        type: ISSUE_TYPES.PLACEHOLDER_BUSINESS_NAME,
+        severity: SEVERITY.CRITICAL,
+        message: 'Business name appears to be a placeholder',
+        actual: `"${businessName}" (detected as placeholder)`
       });
     }
 
@@ -110,8 +196,17 @@ export class PreviewValidator {
       });
     }
 
-    // WARNING: No hero image
+    // Check hero images
+    this.checkHeroImages();
+  }
+
+  /**
+   * Check hero images for availability and validity
+   */
+  checkHeroImages() {
     const images = this.siteData.images || [];
+
+    // WARNING: No hero image
     if (images.length === 0) {
       this.warnings.push({
         type: ISSUE_TYPES.NO_HERO_IMAGE,
@@ -119,6 +214,90 @@ export class PreviewValidator {
         message: 'No hero image available (will use gradient fallback)',
         actual: '0 images'
       });
+      return;
+    }
+
+    // Check hero image quality
+    const heroImage = images[0];
+
+    // CRITICAL: Broken or invalid hero image URL
+    if (heroImage) {
+      const isValidUrl = this.isValidImageUrl(heroImage.url || heroImage.src || heroImage);
+      const isBroken = heroImage.broken === true || heroImage.error;
+
+      if (!isValidUrl || isBroken) {
+        this.issues.push({
+          type: ISSUE_TYPES.BROKEN_HERO_IMAGE,
+          severity: SEVERITY.CRITICAL,
+          message: 'Hero image URL is broken or invalid',
+          actual: typeof heroImage === 'string'
+            ? heroImage.slice(0, 100)
+            : (heroImage.url || heroImage.src || 'unknown')
+        });
+      }
+
+      // WARNING: Low quality hero image (if score available)
+      if (heroImage.score && heroImage.score < 20) {
+        this.warnings.push({
+          type: ISSUE_TYPES.NO_HERO_IMAGE,
+          severity: SEVERITY.WARNING,
+          message: `Hero image quality is low (score: ${heroImage.score}/100)`,
+          actual: `Low quality image: ${heroImage.url || heroImage.src || 'unknown'}`
+        });
+      }
+    }
+  }
+
+  /**
+   * Validate image URL format
+   */
+  isValidImageUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+
+    // Check for common invalid patterns
+    const invalidPatterns = [
+      /^data:image\/svg/i,  // SVG data URIs are often icons
+      /placeholder/i,       // Placeholder images
+      /loading/i,           // Loading spinners
+      /spinner/i,
+      /1x1/,                // Tracking pixels
+      /spacer/i,
+      /blank/i,
+      /default/i,
+      /no-image/i,
+      /noimage/i,
+      /missing/i
+    ];
+
+    if (invalidPatterns.some(p => p.test(url))) {
+      return false;
+    }
+
+    // Check for valid URL format
+    try {
+      // Allow data URIs for actual images
+      if (url.startsWith('data:image/')) {
+        return !url.startsWith('data:image/svg');
+      }
+
+      // Check for valid URL
+      const parsed = new URL(url, 'https://example.com');
+      const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'];
+      const hasValidExtension = validExtensions.some(ext =>
+        parsed.pathname.toLowerCase().includes(ext)
+      );
+
+      // Allow URLs that look like image URLs even without extension
+      // (many CDNs don't use extensions)
+      return hasValidExtension ||
+        /\/images?\//i.test(url) ||
+        /cdn/i.test(url) ||
+        /cloudinary/i.test(url) ||
+        /imgix/i.test(url) ||
+        /unsplash/i.test(url) ||
+        /pexels/i.test(url);
+    } catch {
+      return false;
     }
   }
 

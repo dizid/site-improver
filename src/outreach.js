@@ -189,11 +189,13 @@ export class OutreachManager {
       attempt
     );
 
-    const subjects = {
+    // Use custom subject from options, or fall back to defaults
+    const defaultSubjects = {
       1: `Re: ${deployment.emailSubject}`,
       2: `${deployment.businessName} website`,
       3: `Closing the loop`
     };
+    const subject = options.subject || defaultSubjects[attempt] || defaultSubjects[1];
 
     const htmlBody = wrapInHtml(
       followUpBody,
@@ -202,7 +204,7 @@ export class OutreachManager {
     );
 
     const emailData = {
-      subject: subjects[attempt] || subjects[1],
+      subject,
       textBody: followUpBody,
       htmlBody
     };
@@ -228,15 +230,21 @@ export class OutreachManager {
   }
 }
 
-export async function runDailySequence(config) {
-  const { emailSequence } = CONFIG;
-  const { getDeployments, updateDeployment, getEmailConfig } = await import('./db.js');
+export async function runDailySequence(config, tenantId = null) {
+  const { getDeployments, updateDeployment, getEmailConfig, getFollowUpSequence } = await import('./db.js');
 
   // Check if auto-send is enabled
   const emailConfig = await getEmailConfig();
   if (!emailConfig.autoSendEnabled) {
     log.info('Auto-send disabled, skipping daily sequence');
     return { skipped: true, reason: 'autoSendEnabled is false' };
+  }
+
+  // Get tenant-specific follow-up sequence (or default)
+  const sequence = await getFollowUpSequence(tenantId);
+  if (!sequence.enabled) {
+    log.info('Follow-up sequence disabled for tenant', { tenantId });
+    return { skipped: true, reason: 'sequence disabled' };
   }
 
   const outreach = new OutreachManager(config);
@@ -246,6 +254,8 @@ export async function runDailySequence(config) {
   const deployments = await getDeployments();
 
   for (const d of deployments) {
+    // Skip if tenant filtering and deployment doesn't match
+    if (tenantId && d.tenantId !== tenantId) continue;
     if (d.status === 'converted' || d.status === 'expired') continue;
 
     const daysSinceEmail = d.emailSentAt
@@ -261,32 +271,31 @@ export async function runDailySequence(config) {
         continue;
       }
 
-      // Follow-up 1 (day 3)
-      if (daysSinceEmail >= emailSequence.followUp1 && !d.followUp1SentAt) {
-        const result = await outreach.sendFollowUp(d, 1);
-        if (result?.queued) results.queued++;
-        else if (result) results.sent++;
-        continue;
+      // Process follow-up steps from sequence
+      let stepTriggered = false;
+      for (let i = 0; i < sequence.steps.length; i++) {
+        const step = sequence.steps[i];
+        const attemptNum = i + 1;
+        const sentAtField = `followUp${attemptNum}SentAt`;
+
+        // Check if this step should fire and hasn't been sent
+        if (daysSinceEmail >= step.day && !d[sentAtField]) {
+          const result = await outreach.sendFollowUp(d, attemptNum, {
+            subject: step.subject
+              .replace('{initialSubject}', d.emailSubject || 'Your new website')
+              .replace('{businessName}', d.businessName || 'Your business')
+          });
+          if (result?.queued) results.queued++;
+          else if (result) results.sent++;
+          stepTriggered = true;
+          break; // Only send one email per run
+        }
       }
 
-      // Follow-up 2 (day 7)
-      if (daysSinceEmail >= emailSequence.followUp2 && !d.followUp2SentAt) {
-        const result = await outreach.sendFollowUp(d, 2);
-        if (result?.queued) results.queued++;
-        else if (result) results.sent++;
-        continue;
-      }
+      if (stepTriggered) continue;
 
-      // Breakup (day 12)
-      if (daysSinceEmail >= emailSequence.followUp3 && !d.followUp3SentAt) {
-        const result = await outreach.sendFollowUp(d, 3);
-        if (result?.queued) results.queued++;
-        else if (result) results.sent++;
-        continue;
-      }
-
-      // Expire (day 14)
-      if (daysSinceEmail >= emailSequence.expire) {
+      // Expire if past expire days
+      if (daysSinceEmail >= sequence.expireDays) {
         await updateDeployment(d.siteId, { status: 'expired' });
         results.expired++;
       }
@@ -295,7 +304,7 @@ export async function runDailySequence(config) {
     }
   }
 
-  log.info('Daily sequence completed', results);
+  log.info('Daily sequence completed', { tenantId, ...results });
   return results;
 }
 

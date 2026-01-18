@@ -1,0 +1,67 @@
+{
+  "id": "portfolio",
+  "name": "Portfolio & Creative",
+  "keywords": ["portfolio", "photographer", "photography", "design", "designer", "artist", "creative", "studio", "gallery", "architecture", "interior design", "graphic design", "web design", "illustration", "freelance"],
+
+  "sections": [
+    "header",
+    "hero",
+    "gallery",
+    "services-grid",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "heroVariant": "centered",
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Creative Vision, Exceptional Results",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Bringing your ideas to life through thoughtful design and artistry",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "View Portfolio"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Services"
+    },
+    "gallery_title": {
+      "source": null,
+      "fallback": "Featured Work"
+    },
+    "gallery_subtitle": {
+      "source": null,
+      "fallback": "A selection of our recent projects"
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    },
+    "testimonials_title": {
+      "source": null,
+      "fallback": "Client Testimonials"
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#0f172a",
+      "secondary": "#475569",
+      "accent": "#f59e0b"
+    }
+  }
+}

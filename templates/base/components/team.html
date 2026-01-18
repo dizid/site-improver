@@ -1,0 +1,35 @@
+<!-- Team Section: Grid of team members with photos -->
+<section id="team" class="team-section" aria-labelledby="team-heading">
+  <div class="container">
+    <h2 id="team-heading">{{team_title}}</h2>
+    <p class="section-subtitle">{{team_subtitle}}</p>
+
+    <div class="team-grid">
+      {{#each team}}
+        <div class="team-card">
+          <div class="team-photo">
+            {{#if this.photo}}
+              <img src="{{this.photo}}" alt="{{this.name}}" loading="lazy">
+            {{else}}
+              <div class="team-photo-placeholder">
+                <span>{{this.initials}}</span>
+              </div>
+            {{/if}}
+          </div>
+          <div class="team-info">
+            <h3>{{this.name}}</h3>
+            <p class="team-role">{{this.role}}</p>
+            {{#if this.bio}}
+              <p class="team-bio">{{this.bio}}</p>
+            {{/if}}
+            {{#if this.email}}
+              <a href="mailto:{{this.email}}" class="team-contact" aria-label="Email {{this.name}}">
+                {{{icons.email}}}
+              </a>
+            {{/if}}
+          </div>
+        </div>
+      {{/each}}
+    </div>
+  </div>
+</section>

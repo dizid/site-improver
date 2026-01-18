@@ -1,0 +1,32 @@
+<!-- FAQ Section: Accordion-style questions and answers -->
+<section id="faq" class="faq-section" aria-labelledby="faq-heading">
+  <div class="container">
+    <h2 id="faq-heading">{{faq_title}}</h2>
+    <p class="section-subtitle">{{faq_subtitle}}</p>
+
+    <div class="faq-list">
+      {{#each faq}}
+        <details class="faq-item" {{#if @first}}open{{/if}}>
+          <summary class="faq-question">
+            <span>{{this.question}}</span>
+            <span class="faq-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </summary>
+          <div class="faq-answer">
+            <p>{{this.answer}}</p>
+          </div>
+        </details>
+      {{/each}}
+    </div>
+
+    {{#if faq_cta_text}}
+      <div class="faq-footer">
+        <p>{{faq_footer_text}}</p>
+        <a href="{{faq_cta_link}}" class="btn-secondary">{{faq_cta_text}}</a>
+      </div>
+    {{/if}}
+  </div>
+</section>

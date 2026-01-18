@@ -1,0 +1,47 @@
+<!-- Gallery Section: Image gallery with lightbox -->
+<section id="gallery" class="gallery-section" aria-labelledby="gallery-heading">
+  <div class="container">
+    <h2 id="gallery-heading">{{gallery_title}}</h2>
+    <p class="section-subtitle">{{gallery_subtitle}}</p>
+
+    <div class="gallery-grid">
+      {{#each gallery}}
+        <div class="gallery-item" data-index="{{@index}}">
+          <img src="{{this.src}}" alt="{{this.alt}}" loading="lazy">
+          <div class="gallery-overlay">
+            <span class="gallery-zoom" aria-label="View larger">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+                <path d="M11 8v6"></path>
+                <path d="M8 11h6"></path>
+              </svg>
+            </span>
+            {{#if this.caption}}
+              <span class="gallery-caption">{{this.caption}}</span>
+            {{/if}}
+          </div>
+        </div>
+      {{/each}}
+    </div>
+  </div>
+
+  <!-- Lightbox Modal -->
+  <div class="lightbox" id="lightbox" aria-hidden="true" role="dialog" aria-label="Image viewer">
+    <button class="lightbox-close" aria-label="Close">&times;</button>
+    <button class="lightbox-prev" aria-label="Previous image">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+    <button class="lightbox-next" aria-label="Next image">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    </button>
+    <div class="lightbox-content">
+      <img src="" alt="" id="lightbox-image">
+      <p class="lightbox-caption" id="lightbox-caption"></p>
+    </div>
+  </div>
+</section>

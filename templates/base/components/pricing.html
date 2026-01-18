@@ -1,0 +1,45 @@
+<!-- Pricing Section: Three-tier pricing table -->
+<section id="pricing" class="pricing-section" aria-labelledby="pricing-heading">
+  <div class="container">
+    <h2 id="pricing-heading">{{pricing_title}}</h2>
+    <p class="section-subtitle">{{pricing_subtitle}}</p>
+
+    <div class="pricing-grid">
+      {{#each pricing}}
+        <div class="pricing-card {{#if this.featured}}pricing-featured{{/if}}">
+          {{#if this.featured}}
+            <span class="pricing-badge">Most Popular</span>
+          {{/if}}
+          <div class="pricing-header">
+            <h3>{{this.name}}</h3>
+            <p class="pricing-description">{{this.description}}</p>
+          </div>
+          <div class="pricing-price">
+            {{#if this.price}}
+              <span class="price-currency">$</span>
+              <span class="price-amount">{{this.price}}</span>
+              {{#if this.period}}
+                <span class="price-period">/{{this.period}}</span>
+              {{/if}}
+            {{else}}
+              <span class="price-custom">Contact Us</span>
+            {{/if}}
+          </div>
+          <ul class="pricing-features">
+            {{#each this.features}}
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                {{this}}
+              </li>
+            {{/each}}
+          </ul>
+          <a href="{{this.cta_link}}" class="btn-primary pricing-cta">
+            {{this.cta_text}}
+          </a>
+        </div>
+      {{/each}}
+    </div>
+  </div>
+</section>
