@@ -1700,4 +1700,548 @@ function extractTrustSignals($, html) {
   return trustSignals;
 }
 
-export default { scrapeSiteLite };
+/**
+ * Multi-page scraper - scrapes homepage plus 2-3 additional important pages
+ * Discovers internal pages from navigation and scrapes them for richer content
+ */
+export async function scrapeMultiPage(url, options = {}) {
+  const { maxPages = 3, timeout = 45000 } = options;
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+
+  log.info('Starting multi-page scrape', { url, maxPages });
+
+  // 1. Scrape homepage first
+  const homepageData = await scrapeSiteLite(url);
+
+  if (!apiKey) {
+    log.info('No Firecrawl API key - skipping additional pages');
+    return homepageData;
+  }
+
+  try {
+    // 2. Fetch homepage HTML again to discover internal pages
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({ url, formats: ['html'], onlyMainContent: false })
+    });
+
+    if (!response.ok) {
+      log.warn('Failed to fetch HTML for page discovery');
+      return homepageData;
+    }
+
+    const result = await response.json();
+    const $ = cheerio.load(result.data?.html || '');
+
+    // 3. Discover internal pages
+    const internalPages = discoverInternalPages($, url);
+    log.info('Discovered internal pages', {
+      count: internalPages.length,
+      pages: internalPages.map(p => p.type)
+    });
+
+    if (internalPages.length === 0) {
+      return homepageData;
+    }
+
+    // 4. Scrape additional pages (parallel with rate limiting)
+    const pagesToScrape = internalPages.slice(0, maxPages);
+    const additionalResults = await Promise.allSettled(
+      pagesToScrape.map(page => scrapeInternalPage(page.url, page.type, apiKey))
+    );
+
+    // 5. Collect successful scrapes
+    const additionalData = additionalResults
+      .filter(r => r.status === 'fulfilled' && r.value)
+      .map(r => r.value);
+
+    log.info('Scraped additional pages', {
+      attempted: pagesToScrape.length,
+      successful: additionalData.length
+    });
+
+    // 6. Merge all content
+    return mergeMultiPageData(homepageData, additionalData);
+
+  } catch (error) {
+    log.warn('Multi-page scrape failed, returning homepage only', { error: error.message });
+    return homepageData;
+  }
+}
+
+/**
+ * Discover internal pages from navigation links
+ * Prioritizes: about, services, team, reviews, contact
+ */
+function discoverInternalPages($, baseUrl) {
+  const discovered = new Map(); // type -> { url, priority }
+
+  // Target page patterns with priorities
+  const TARGET_PAGES = [
+    { patterns: ['/about', '/about-us', '/who-we-are', '/our-story', '/our-company', '/company'], type: 'about', priority: 1 },
+    { patterns: ['/services', '/what-we-do', '/our-services', '/solutions', '/offerings'], type: 'services', priority: 2 },
+    { patterns: ['/team', '/our-team', '/staff', '/meet-the-team', '/people', '/about/team'], type: 'team', priority: 3 },
+    { patterns: ['/reviews', '/testimonials', '/feedback', '/customer-reviews', '/success-stories'], type: 'reviews', priority: 4 },
+    { patterns: ['/portfolio', '/projects', '/work', '/gallery', '/case-studies'], type: 'portfolio', priority: 5 },
+    { patterns: ['/pricing', '/prices', '/rates', '/packages'], type: 'pricing', priority: 6 }
+  ];
+
+  const baseUrlObj = new URL(baseUrl);
+  const baseDomain = baseUrlObj.hostname;
+
+  // Check all links
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href) return;
+
+    // Normalize URL
+    let fullUrl;
+    try {
+      if (href.startsWith('http')) {
+        fullUrl = new URL(href);
+      } else if (href.startsWith('/')) {
+        fullUrl = new URL(href, baseUrl);
+      } else {
+        return; // Skip relative paths without /
+      }
+    } catch {
+      return;
+    }
+
+    // Skip external links
+    if (fullUrl.hostname !== baseDomain) return;
+
+    // Skip anchors, assets, and common non-content pages
+    const path = fullUrl.pathname.toLowerCase();
+    if (path.includes('#') ||
+        path.match(/\.(pdf|jpg|png|gif|css|js)$/i) ||
+        path.match(/\/(login|signup|register|cart|checkout|account|wp-admin|feed)/)) {
+      return;
+    }
+
+    // Check against target patterns
+    for (const target of TARGET_PAGES) {
+      for (const pattern of target.patterns) {
+        if (path === pattern || path === pattern + '/' || path.endsWith(pattern) || path.endsWith(pattern + '/')) {
+          const existing = discovered.get(target.type);
+          if (!existing || target.priority < existing.priority) {
+            discovered.set(target.type, {
+              url: fullUrl.href,
+              type: target.type,
+              priority: target.priority
+            });
+          }
+          break;
+        }
+      }
+    }
+  });
+
+  // Also check link text for clues
+  $('a').each((_, el) => {
+    const text = $(el).text().toLowerCase().trim();
+    const href = $(el).attr('href');
+    if (!href || href.startsWith('#')) return;
+
+    let fullUrl;
+    try {
+      fullUrl = href.startsWith('http') ? new URL(href) : new URL(href, baseUrl);
+      if (fullUrl.hostname !== baseDomain) return;
+    } catch {
+      return;
+    }
+
+    // Match by link text
+    const textMatches = [
+      { texts: ['about us', 'about', 'who we are', 'our story', 'our company'], type: 'about' },
+      { texts: ['our services', 'services', 'what we do'], type: 'services' },
+      { texts: ['our team', 'meet the team', 'team', 'staff'], type: 'team' },
+      { texts: ['testimonials', 'reviews', 'customer reviews'], type: 'reviews' },
+      { texts: ['portfolio', 'our work', 'projects', 'gallery'], type: 'portfolio' }
+    ];
+
+    for (const match of textMatches) {
+      if (match.texts.includes(text) && !discovered.has(match.type)) {
+        discovered.set(match.type, {
+          url: fullUrl.href,
+          type: match.type,
+          priority: 10 // Lower priority than URL-based matches
+        });
+      }
+    }
+  });
+
+  // Sort by priority and return
+  return Array.from(discovered.values())
+    .sort((a, b) => a.priority - b.priority);
+}
+
+/**
+ * Scrape a single internal page with lightweight extraction
+ */
+async function scrapeInternalPage(url, pageType, apiKey) {
+  try {
+    log.debug('Scraping internal page', { url, type: pageType });
+
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({ url, formats: ['html'], onlyMainContent: true })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (!result.success || !result.data?.html) {
+      throw new Error('No HTML content');
+    }
+
+    const $ = cheerio.load(result.data.html);
+
+    // Extract based on page type
+    const extracted = {
+      url,
+      type: pageType
+    };
+
+    switch (pageType) {
+      case 'about':
+        extracted.aboutContent = extractAboutContent($);
+        extracted.teamMembers = extractTeamMembers($, url);
+        break;
+      case 'services':
+        extracted.services = extractServices($, []);
+        extracted.paragraphs = extractParagraphs($);
+        break;
+      case 'team':
+        extracted.teamMembers = extractTeamMembers($, url);
+        break;
+      case 'reviews':
+        extracted.testimonials = extractTestimonials($);
+        break;
+      case 'portfolio':
+        extracted.portfolioImages = extractPortfolioImages($, url);
+        break;
+      case 'pricing':
+        extracted.tables = extractTableContent($);
+        break;
+    }
+
+    log.debug('Extracted from internal page', {
+      type: pageType,
+      hasAbout: !!extracted.aboutContent,
+      teamCount: extracted.teamMembers?.length || 0,
+      servicesCount: extracted.services?.length || 0,
+      testimonialsCount: extracted.testimonials?.length || 0
+    });
+
+    return extracted;
+
+  } catch (error) {
+    log.warn('Failed to scrape internal page', { url, type: pageType, error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Extract paragraphs from a page
+ */
+function extractParagraphs($) {
+  const paragraphs = [];
+  $('p').each((_, el) => {
+    const text = $(el).text().trim().replace(/\s+/g, ' ');
+    if (text.length > 50 && text.length < 1000) {
+      paragraphs.push(text);
+    }
+  });
+  return paragraphs.slice(0, 10);
+}
+
+/**
+ * Extract about page content (mission, history, values)
+ */
+function extractAboutContent($) {
+  const aboutContent = {
+    mission: null,
+    history: null,
+    values: [],
+    summary: null
+  };
+
+  // Look for mission statement
+  const missionSelectors = [
+    '[class*="mission"]', '[id*="mission"]',
+    'section:contains("Our Mission")', 'section:contains("Mission")'
+  ];
+
+  for (const sel of missionSelectors) {
+    const $el = $(sel).first();
+    if ($el.length) {
+      const text = $el.find('p').first().text().trim() || $el.text().trim();
+      if (text.length > 30 && text.length < 500) {
+        aboutContent.mission = text.replace(/\s+/g, ' ');
+        break;
+      }
+    }
+  }
+
+  // Look for history/story
+  const historySelectors = [
+    '[class*="history"]', '[class*="story"]', '[id*="history"]',
+    'section:contains("Our Story")', 'section:contains("History")'
+  ];
+
+  for (const sel of historySelectors) {
+    const $el = $(sel).first();
+    if ($el.length) {
+      const text = $el.find('p').first().text().trim() || $el.text().trim();
+      if (text.length > 50 && text.length < 800) {
+        aboutContent.history = text.replace(/\s+/g, ' ');
+        break;
+      }
+    }
+  }
+
+  // Look for values
+  $('[class*="value"], [class*="core-value"]').each((_, el) => {
+    const title = $(el).find('h3, h4, strong').first().text().trim();
+    const desc = $(el).find('p').first().text().trim();
+    if (title && title.length < 50) {
+      aboutContent.values.push({ title, description: desc?.slice(0, 200) || '' });
+    }
+  });
+
+  // Get main about summary (first substantial paragraph in main content)
+  if (!aboutContent.mission && !aboutContent.history) {
+    $('main p, article p, .content p, .about p').each((_, el) => {
+      const text = $(el).text().trim().replace(/\s+/g, ' ');
+      if (text.length > 100 && text.length < 600 && !aboutContent.summary) {
+        aboutContent.summary = text;
+      }
+    });
+  }
+
+  return aboutContent;
+}
+
+/**
+ * Extract team members from team page or about page
+ */
+function extractTeamMembers($, baseUrl) {
+  const teamMembers = [];
+  const seenNames = new Set();
+
+  // Common team member container selectors
+  const containerSelectors = [
+    '[class*="team-member"]', '[class*="staff-member"]', '[class*="team-card"]',
+    '[class*="person"]', '[class*="employee"]', '[class*="bio"]',
+    '.team > div', '.team-grid > div', '.staff > div'
+  ];
+
+  for (const sel of containerSelectors) {
+    $(sel).each((_, el) => {
+      const $el = $(el);
+
+      // Extract name
+      const name = $el.find('h3, h4, h5, [class*="name"], strong').first().text().trim();
+      if (!name || name.length < 2 || name.length > 60 || seenNames.has(name.toLowerCase())) {
+        return;
+      }
+
+      // Extract role/title
+      const role = $el.find('[class*="title"], [class*="role"], [class*="position"], p:first, small').first().text().trim();
+
+      // Extract photo
+      let photo = $el.find('img').first().attr('src') || $el.find('img').first().attr('data-src');
+      if (photo) {
+        if (photo.startsWith('/')) photo = new URL(photo, baseUrl).href;
+        else if (!photo.startsWith('http')) {
+          try { photo = new URL(photo, baseUrl).href; } catch { photo = null; }
+        }
+      }
+
+      // Extract bio (if available)
+      const bio = $el.find('[class*="bio"], [class*="description"], p:last').text().trim();
+
+      seenNames.add(name.toLowerCase());
+      teamMembers.push({
+        name,
+        role: role && role !== name ? role.slice(0, 100) : null,
+        photo: photo || null,
+        bio: bio && bio !== role && bio.length > 20 ? bio.slice(0, 300) : null
+      });
+    });
+
+    if (teamMembers.length >= 10) break;
+  }
+
+  return teamMembers.slice(0, 10);
+}
+
+/**
+ * Extract portfolio/gallery images
+ */
+function extractPortfolioImages($, baseUrl) {
+  const images = [];
+  const seenSrcs = new Set();
+
+  // Portfolio/gallery selectors
+  const selectors = [
+    '[class*="portfolio"] img', '[class*="gallery"] img', '[class*="project"] img',
+    '[class*="work"] img', '[class*="case-study"] img', 'figure img'
+  ];
+
+  for (const sel of selectors) {
+    $(sel).each((_, el) => {
+      let src = $(el).attr('src') || $(el).attr('data-src');
+      if (!src || seenSrcs.has(src)) return;
+
+      // Normalize URL
+      if (src.startsWith('/')) src = new URL(src, baseUrl).href;
+      else if (!src.startsWith('http')) {
+        try { src = new URL(src, baseUrl).href; } catch { return; }
+      }
+
+      // Skip tiny images
+      const width = parseInt($(el).attr('width')) || 300;
+      const height = parseInt($(el).attr('height')) || 200;
+      if (width < 150 || height < 150) return;
+
+      seenSrcs.add(src);
+      images.push({
+        src,
+        alt: $(el).attr('alt') || '',
+        caption: $(el).closest('figure').find('figcaption').text().trim() || null
+      });
+    });
+  }
+
+  return images.slice(0, 12);
+}
+
+/**
+ * Merge multi-page data intelligently
+ * Deduplicates and combines content from homepage and additional pages
+ */
+function mergeMultiPageData(homepage, additionalPages) {
+  const merged = { ...homepage };
+
+  // Track what we've seen for deduplication
+  const seenServices = new Set(homepage.services?.map(s => s.toLowerCase()) || []);
+  const seenTestimonials = new Set(
+    homepage.testimonials?.map(t => t.text?.toLowerCase().slice(0, 50)) || []
+  );
+
+  for (const page of additionalPages) {
+    if (!page) continue;
+
+    // Merge about content
+    if (page.aboutContent) {
+      merged.aboutContent = merged.aboutContent || {};
+      if (page.aboutContent.mission) merged.aboutContent.mission = page.aboutContent.mission;
+      if (page.aboutContent.history) merged.aboutContent.history = page.aboutContent.history;
+      if (page.aboutContent.summary) merged.aboutContent.summary = page.aboutContent.summary;
+      if (page.aboutContent.values?.length) {
+        merged.aboutContent.values = page.aboutContent.values;
+      }
+    }
+
+    // Merge team members
+    if (page.teamMembers?.length) {
+      merged.teamMembers = merged.teamMembers || [];
+      const existingNames = new Set(merged.teamMembers.map(m => m.name.toLowerCase()));
+      for (const member of page.teamMembers) {
+        if (!existingNames.has(member.name.toLowerCase())) {
+          merged.teamMembers.push(member);
+          existingNames.add(member.name.toLowerCase());
+        }
+      }
+    }
+
+    // Merge services (dedupe)
+    if (page.services?.length) {
+      for (const service of page.services) {
+        if (!seenServices.has(service.toLowerCase())) {
+          merged.services = merged.services || [];
+          merged.services.push(service);
+          seenServices.add(service.toLowerCase());
+        }
+      }
+    }
+
+    // Merge testimonials (dedupe by text prefix)
+    if (page.testimonials?.length) {
+      for (const testimonial of page.testimonials) {
+        const key = testimonial.text?.toLowerCase().slice(0, 50);
+        if (key && !seenTestimonials.has(key)) {
+          merged.testimonials = merged.testimonials || [];
+          merged.testimonials.push(testimonial);
+          seenTestimonials.add(key);
+        }
+      }
+    }
+
+    // Merge portfolio images
+    if (page.portfolioImages?.length) {
+      merged.portfolioImages = merged.portfolioImages || [];
+      const existingSrcs = new Set(merged.portfolioImages.map(i => i.src));
+      for (const img of page.portfolioImages) {
+        if (!existingSrcs.has(img.src)) {
+          merged.portfolioImages.push(img);
+          existingSrcs.add(img.src);
+        }
+      }
+    }
+
+    // Merge paragraphs for richer content
+    if (page.paragraphs?.length) {
+      merged.paragraphs = merged.paragraphs || [];
+      const existingParagraphs = new Set(merged.paragraphs.map(p => p.slice(0, 50).toLowerCase()));
+      for (const para of page.paragraphs) {
+        if (!existingParagraphs.has(para.slice(0, 50).toLowerCase())) {
+          merged.paragraphs.push(para);
+          existingParagraphs.add(para.slice(0, 50).toLowerCase());
+        }
+      }
+      merged.paragraphs = merged.paragraphs.slice(0, 15);
+    }
+
+    // Merge pricing tables
+    if (page.tables?.length) {
+      merged.tables = merged.tables || [];
+      merged.tables.push(...page.tables);
+      merged.tables = merged.tables.slice(0, 5);
+    }
+  }
+
+  // Apply limits
+  if (merged.services) merged.services = merged.services.slice(0, 15);
+  if (merged.testimonials) merged.testimonials = merged.testimonials.slice(0, 12);
+  if (merged.teamMembers) merged.teamMembers = merged.teamMembers.slice(0, 10);
+  if (merged.portfolioImages) merged.portfolioImages = merged.portfolioImages.slice(0, 12);
+
+  // Mark as multi-page
+  merged.multiPageScrape = true;
+  merged.pagesScraped = 1 + additionalPages.filter(p => p).length;
+
+  log.info('Multi-page merge complete', {
+    pagesScraped: merged.pagesScraped,
+    services: merged.services?.length || 0,
+    testimonials: merged.testimonials?.length || 0,
+    teamMembers: merged.teamMembers?.length || 0,
+    hasAboutContent: !!merged.aboutContent
+  });
+
+  return merged;
+}
+
+export default { scrapeSiteLite, scrapeMultiPage };

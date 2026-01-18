@@ -129,38 +129,47 @@ describe('TemplateBuilder', () => {
   });
 
   describe('generateCSS', () => {
-    it('should generate CSS with extracted colors', async () => {
+    it('should include scraped brand colors when available', async () => {
       const builder = new TemplateBuilder();
-      const colors = ['#1e40af', '#3b82f6'];
-      const config = {
-        colorMapping: {
-          primary: 'colors[0]',
-          secondary: 'colors[1]',
-          fallback: { primary: '#000', secondary: '#fff' }
-        }
+      // Scraped colors should now be an object with primary/secondary/accent
+      const colors = {
+        primary: '#1e40af',
+        secondary: '#3b82f6',
+        accent: '#f97316'
       };
+      const config = {};
 
       const css = builder.generateCSS(colors, config);
 
-      expect(css).toContain('--color-primary');
-      expect(css).toContain('--color-secondary');
+      // Should include color overrides when scraped colors are provided
+      expect(css).toContain('--color-primary: #1e40af');
+      expect(css).toContain('--color-secondary: #3b82f6');
+      expect(css).toContain('--color-accent: #f97316');
     });
 
-    it('should use fallback colors when not found', async () => {
+    it('should apply typography CSS variables', async () => {
       const builder = new TemplateBuilder();
-      const config = {
-        colorMapping: {
-          fallback: {
-            primary: '#1e40af',
-            secondary: '#3b82f6',
-            accent: '#f97316'
-          }
-        }
-      };
+      const config = {};
 
-      const css = builder.generateCSS([], config);
+      // Without scraped colors, only typography CSS should be generated
+      const css = builder.generateCSS({}, config);
 
-      expect(css).toContain('#1e40af');
+      // Design system CSS variables should be referenced for typography
+      expect(css).toContain('font-family: var(--font-body)');
+      expect(css).toContain('font-family: var(--font-heading)');
+      expect(css).toContain('line-height: var(--line-height-body)');
+    });
+
+    it('should skip color override for black primary colors', async () => {
+      const builder = new TemplateBuilder();
+      // Black is often a false positive from scraping
+      const colors = { primary: '#000000' };
+      const config = {};
+
+      const css = builder.generateCSS(colors, config);
+
+      // Should not include black color override
+      expect(css).not.toContain('--color-primary: #000000');
     });
   });
 });

@@ -8,6 +8,7 @@ import logger from './logger.js';
 import { ICONS, getIcon, detectIcon } from '../templates/base/icons.js';
 import { resolveSmartFallbacks, isEmptyOrPlaceholder } from './smartFallbacks.js';
 import { INDUSTRY_KEYWORDS, SCHEMA_TO_INDUSTRY, SIGNAL_WEIGHTS, CONFIDENCE_THRESHOLDS } from './industryKeywords.js';
+import { getDesignSystem, getColorPalette, getFontPairing as getDesignFontPairing, generateDesignCSS, FONT_PAIRINGS as DESIGN_FONT_PAIRINGS } from './designSystem.js';
 
 const log = logger.child('templateBuilder');
 
@@ -657,46 +658,51 @@ export class TemplateBuilder {
   }
 
   generateCSS(colors, config, industry = 'general') {
-    const colorMapping = config.colorMapping || {};
-    const fallback = colorMapping.fallback || {
-      primary: '#1e40af',
-      secondary: '#3b82f6',
-      accent: '#f97316'
-    };
+    // The design system now provides default colors and typography
+    // This method only adds overrides for scraped brand colors when available
+    let css = '';
 
-    const palette = {};
-    for (const [name, source] of Object.entries(colorMapping)) {
-      if (name === 'fallback') continue;
-      palette[name] = this.getByPath({ colors }, source) || fallback[name];
+    // If site has scraped colors, use them to override design system defaults
+    // This preserves brand identity when the original site had clear branding
+    if (colors && typeof colors === 'object') {
+      const overrides = [];
+
+      // Only override if we have actual scraped color values
+      if (colors.primary && colors.primary !== '#000000') {
+        overrides.push(`--color-primary: ${colors.primary}`);
+      }
+      if (colors.secondary) {
+        overrides.push(`--color-secondary: ${colors.secondary}`);
+      }
+      if (colors.accent) {
+        overrides.push(`--color-accent: ${colors.accent}`);
+      }
+
+      if (overrides.length > 0) {
+        css += `
+          /* Scraped brand color overrides */
+          :root {
+            ${overrides.join(';\n            ')};
+          }
+        `;
+      }
     }
 
-    // Ensure we have all colors
-    palette.primary = palette.primary || fallback.primary;
-    palette.secondary = palette.secondary || fallback.secondary;
-    palette.accent = palette.accent || fallback.accent;
-
-    // Get font pairing
-    const fonts = this.getFontPairing(industry);
-
-    return `
-      :root {
-        --color-primary: ${palette.primary};
-        --color-secondary: ${palette.secondary};
-        --color-accent: ${palette.accent};
-        --color-text: #1f2937;
-        --color-text-light: #6b7280;
-        --color-background: #ffffff;
-        --color-surface: #f9fafb;
-        --font-heading: ${fonts.heading};
-        --font-body: ${fonts.body};
-      }
+    // Apply typography from design system
+    css += `
       body {
         font-family: var(--font-body);
+        line-height: var(--line-height-body);
+        letter-spacing: var(--letter-spacing-body);
       }
       h1, h2, h3, h4, h5, h6 {
         font-family: var(--font-heading);
+        line-height: var(--line-height-heading);
+        letter-spacing: var(--letter-spacing-heading);
       }
     `;
+
+    return css;
   }
 
   async build(siteData) {
@@ -706,13 +712,26 @@ export class TemplateBuilder {
     const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
     const slots = this.mapSlots(siteData, config);
 
-    // Get layout variant for this industry
-    const variantName = INDUSTRY_VARIANTS[industry] || 'classic';
-    const variant = LAYOUT_VARIANTS[variantName];
-    slots.heroVariant = variant.heroLayout; // 'split', 'centered', 'fullwidth', 'asymmetric'
-    slots.cardStyle = variant.cardStyle;
-    slots.variantName = variantName;
+    // Get design system personality for this industry
+    const designSystem = getDesignSystem(industry);
+    const personality = designSystem.selectPersonality(siteData);
+    const designConfig = designSystem.personalities[personality] || designSystem.personalities[designSystem.defaultPersonality];
+
+    // Apply design system to slots
+    slots.heroVariant = designConfig.heroStyle || 'split';
+    slots.cardStyle = designConfig.cardStyle || 'bordered';
+    slots.sectionDivider = designConfig.sectionDivider || 'wave';
+    slots.buttonStyle = designConfig.buttonStyle || 'solid';
+    slots.animationStyle = designConfig.animations || 'professional';
+    slots.spacingStyle = designConfig.spacing || 'normal';
+    slots.shadowStyle = designConfig.shadows || 'medium';
+    slots.personality = personality;
+    slots.variantName = personality;
     slots.year = new Date().getFullYear();
+
+    // Store design config for CSS generation
+    siteData._designConfig = designConfig;
+    siteData._personality = personality;
 
     // Build HTML from sections
     const sections = (config.sections || []).map(section => {
@@ -794,17 +813,28 @@ export class TemplateBuilder {
     const industry = siteData.industry || this.detectIndustry(siteData);
     const config = this.industryConfigs[industry] || this.industryConfigs['general'] || { sections: [], slots: {} };
 
-    // Get layout variant for this industry
-    const variantName = INDUSTRY_VARIANTS[industry] || 'classic';
-    const variant = LAYOUT_VARIANTS[variantName];
+    // Get design system personality for this industry
+    const designSystem = getDesignSystem(industry);
+    const personality = siteData._personality || designSystem.selectPersonality(siteData);
+    const designConfig = siteData._designConfig || designSystem.personalities[personality] || designSystem.personalities[designSystem.defaultPersonality];
 
-    // Resolve icon names to actual SVG HTML and add variant info
+    // Resolve icon names to actual SVG HTML and add design system info
     const slotsWithIcons = {
       ...this.resolveIcons(polishedSlots),
-      heroVariant: variant.heroLayout,
-      cardStyle: variant.cardStyle,
-      variantName
+      heroVariant: designConfig.heroStyle || 'split',
+      cardStyle: designConfig.cardStyle || 'bordered',
+      sectionDivider: designConfig.sectionDivider || 'wave',
+      buttonStyle: designConfig.buttonStyle || 'solid',
+      animationStyle: designConfig.animations || 'professional',
+      spacingStyle: designConfig.spacing || 'normal',
+      shadowStyle: designConfig.shadows || 'medium',
+      personality,
+      variantName: personality
     };
+
+    // Store for CSS generation
+    siteData._designConfig = designConfig;
+    siteData._personality = personality;
 
     // Build HTML from sections with resolved icons
     const sections = (config.sections || []).map(section => {
@@ -838,22 +868,37 @@ export class TemplateBuilder {
     const description = slots.subheadline || siteData.description || '';
     const language = siteData.language || 'en';
 
-    // Get the appropriate Google Fonts URL for this industry
-    const fonts = this.getFontPairing(industry);
+    // Get design system configuration
+    const designSystem = getDesignSystem(industry);
+    const personality = siteData._personality || designSystem.defaultPersonality;
+    const designConfig = siteData._designConfig || designSystem.personalities[personality];
+
+    // Generate design system CSS with colors, typography, and design tokens
+    const designSystemCSS = generateDesignCSS(industry, personality);
+
+    // Get the font pairing from the design system
+    const fonts = getDesignFontPairing(designConfig.typography);
     const googleFontsUrl = `https://fonts.googleapis.com/css2?${fonts.googleFonts}&display=swap`;
 
-    // Get layout variant CSS
-    const variant = this.getLayoutVariant(industry);
-    const variantCSS = this.generateVariantCSS(variant);
-
-    // Get hero image for fullwidth variant background
+    // Get hero image for hero backgrounds
     const heroImage = siteData.images?.[0]?.src || '';
-    const heroStyle = variant.heroLayout === 'fullwidth' && heroImage
+    const heroVariant = designConfig.heroStyle || slots.heroVariant || 'split';
+    const heroNeedsBackground = ['fullwidth', 'fullwidth-dark', 'diagonal-split', 'stacked'].includes(heroVariant);
+    const heroStyle = heroNeedsBackground && heroImage
       ? `style="--hero-bg-image: url('${heroImage}')"`
       : '';
 
-    // Add variant class to body for additional styling hooks
-    const variantClass = `variant-${variant.name.toLowerCase()}`;
+    // Build body classes for design system hooks
+    const bodyClasses = [
+      `hero-${heroVariant}`,
+      `card-${designConfig.cardStyle || 'bordered'}`,
+      `spacing-${designConfig.spacing || 'normal'}`,
+      `shadows-${designConfig.shadows || 'medium'}`,
+      `animations-${designConfig.animations || 'professional'}`,
+      `divider-${designConfig.sectionDivider || 'wave'}`,
+      `btn-style-${designConfig.buttonStyle || 'solid'}`,
+      `personality-${personality}`
+    ].join(' ');
 
     // Generate JSON-LD structured data
     const jsonLd = this.generateStructuredData(siteData, slots);
@@ -862,7 +907,8 @@ export class TemplateBuilder {
     const socialMeta = this.generateSocialMeta(siteData, slots, heroImage);
 
     // Combine and minify CSS for performance
-    const combinedCSS = `${baseCSS}\n${customCSS}\n${variantCSS}`;
+    // Order: base CSS → design system CSS (overrides) → custom CSS (specific overrides)
+    const combinedCSS = `${baseCSS}\n${designSystemCSS}\n${customCSS}`;
     const minifiedCSS = this.minifyCSS(combinedCSS);
 
     return `<!DOCTYPE html>
@@ -879,9 +925,9 @@ export class TemplateBuilder {
   <style>${minifiedCSS}</style>
   ${jsonLd}
 </head>
-<body class="${variantClass}">
+<body class="${bodyClasses}">
 <main id="main-content">
-${sections.join('\n').replace('<section class="hero"', `<section class="hero" ${heroStyle}`)}
+${sections.join('\n').replace('<section class="hero"', `<section class="hero hero--${heroVariant}" ${heroStyle}`)}
 </main>
 ${this.getMobileMenuScript()}
 ${this.getScrollAnimationScript()}
