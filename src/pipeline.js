@@ -221,6 +221,36 @@ export async function rebuildAndDeploy(targetUrl, options = {}) {
     log.info('Step 4: AI skipped by request');
   }
 
+  // 4b. CRO Optimization (refine generated content for conversions)
+  const shouldOptimize = !options.skipOptimize && features.aiPolish && aiGeneratedContent;
+
+  if (shouldOptimize) {
+    log.info('Step 4b: Optimizing content for conversions...');
+    tracker.generating({ label: 'Optimizing for conversions...' });
+
+    try {
+      const { ContentOptimizer } = await import('./contentOptimizer.js');
+      const optimizer = new ContentOptimizer();
+      const optimizeResult = await optimizer.optimizeContent(polishedSlots, siteData, industry);
+
+      if (optimizeResult.improved) {
+        polishedSlots = optimizeResult.slots;
+        log.info('Content optimized', {
+          beforeScore: optimizeResult.beforeScore,
+          afterScore: optimizeResult.afterScore,
+          improvement: optimizeResult.afterScore - optimizeResult.beforeScore
+        });
+      } else {
+        log.info('Optimization skipped - no improvement', {
+          beforeScore: optimizeResult.beforeScore,
+          afterScore: optimizeResult.afterScore
+        });
+      }
+    } catch (error) {
+      log.warn('CRO optimization failed, using unmodified content', { error: error.message });
+    }
+  }
+
   // 5. Generate final HTML
   log.info('Step 5: Generating HTML...');
   tracker.building({ label: 'Generating final HTML...', progress: 75 });

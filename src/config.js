@@ -93,7 +93,8 @@ export const CONFIG = {
     maxTokens: {
       slot: 200,              // For individual slot polish
       services: 800,          // For service list polish
-      fullSite: 1000          // For entire site polish
+      fullSite: 1000,         // For entire site polish
+      optimize: 1200          // For CRO optimization step
     },
     concurrency: 3            // Max parallel AI requests
   },
