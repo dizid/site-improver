@@ -233,7 +233,80 @@ const CLICHE_BLOCKLIST = [
   'literally',
   'basically',
   'essentially',
-  'actually'
+  'actually',
+
+  // ===== AI-GENERATED CLICHES (common AI writing patterns) =====
+  'in today\'s fast-paced world',
+  'in today\'s competitive landscape',
+  'in today\'s digital age',
+  'look no further',
+  'your satisfaction is our priority',
+  'we pride ourselves on',
+  'one-stop shop',
+  'above and beyond',
+  'rest assured',
+  'hassle-free',
+  'cutting-edge',
+  'best-in-class',
+  'it\'s not just about',
+  'at the forefront',
+  'a testament to',
+  'navigating the complexities',
+  'unlock the potential',
+  'unlock your potential',
+  'embark on a journey',
+  'take your business to the next level',
+  'next level',
+  'stand out from the crowd',
+  'in a world where',
+  'more than just a',
+  'isn\'t just about',
+  'redefine what it means',
+  'elevate your',
+  'bridge the gap',
+  'dive deep',
+  'deep dive',
+  'touch base',
+  'circle back',
+  'moving forward',
+  'space',          // as in "in the plumbing space"
+  'landscape',      // as in "the competitive landscape"
+  'ecosystem',
+  'paradigm',
+  'bandwidth',
+  'wheelhouse',
+  'pain point',     // meta-cliche: writing about pain points using the word
+  'value-driven',
+  'mission-driven',
+  'purpose-driven',
+  'data-driven',
+  'thought leader',
+  'thought leadership',
+  'best kept secret',
+  'hidden gem',
+  'game changer',
+  'game-changer',
+  'revolutionary',
+  'transformative',
+  'unmatched expertise',
+  'every step of the way',
+  'from start to finish',
+  'from day one',
+  'like no other',
+  'second to none',
+
+  // ===== MORE AI-TYPICAL CLICHES =====
+  'tailor-made solutions',
+  'unparalleled expertise',
+  'comprehensive suite of',
+  'seamlessly integrate',
+  'seamless integration',
+  'deliver exceptional results',
+  'transform your vision',
+  'redefine the standard',
+  'driving innovation',
+  'proven track record of success',
+  'proven track record'
 ];
 
 /**
@@ -266,7 +339,28 @@ const GENERIC_PATTERNS = [
   /(?:best|top|leading|premier)\s+\w+\s+(?:in|around)\s+(?:the\s+)?\w+/i,
   /experience\s+the\s+difference/i,
   /see\s+(?:why|what)\s+(?:our|so many)\s+customers/i,
-  /discover\s+(?:the|why)/i
+  /discover\s+(?:the|why)/i,
+
+  // NEW: Generic superlatives without specifics (TASK 1 additions)
+  /(?:the\s+)?(?:best|top|leading|premier|greatest)\s+(?:in\s+(?:the\s+)?(?:industry|business|area|region|field))/i,
+  /(?:world|industry|area)\s*['']?s?\s+(?:best|finest|top|leading)/i,
+  /(?:top[\s-]rated|best|world[\s-]class)\s+(?![\d])/i,  // Generic superlatives without following numbers
+
+  // TASK 1: Empty value propositions
+  /(?:quality|professional)\s+(?:service|team)/i,
+  /dedicated\s+professionals?\b/i,
+
+  // TASK 1: Excessive "we" usage pattern - will be checked separately in validateContent
+  // Pattern added below in validation function
+  /(?:most\s+)?(?:trusted|reliable|experienced)\s+(?:in|around)\s+/i,
+
+  // NEW: Empty value propositions
+  /(?:quality|professional|expert)\s+(?:service|team|staff)\s+(?:you\s+)?(?:can\s+)?(?:trust|rely|count)/i,
+  /dedicated\s+to\s+(?:providing|delivering|offering)\s+(?:the\s+)?(?:best|quality|excellent)/i,
+
+  // NEW: AI-typical sentence starters
+  /^(?:whether\s+you['']re|imagine\s+a\s+world|picture\s+this)/i,
+  /^(?:say\s+goodbye|say\s+hello)\s+to/i
 ];
 
 /**
@@ -318,6 +412,56 @@ export function validateContent(content, context = {}) {
         severity: 'medium',
         suggestion: 'Use specific details instead of generic phrasing'
       });
+    }
+  }
+
+  // Check for excessive "we" usage (more than 3x in headline/subheadline-length text)
+  const weMatches = content.match(/\bwe\b/gi) || [];
+  if (weMatches.length > 3) {
+    issues.push({
+      type: 'excessive_we',
+      text: `Excessive "we" usage (${weMatches.length} times) — content should focus on the customer`,
+      severity: 'medium',
+      suggestion: 'Replace "We offer..." with "You get..." or "Your home gets..."'
+    });
+  }
+
+  // Check for generic superlatives without specifics ("the best", "top-rated", "world-class")
+  const genericSuperlatives = content.match(/\b(?:the\s+best|top[\s-]rated|world[\s-]class|number\s+one|#1)\b/gi) || [];
+  if (genericSuperlatives.length > 0) {
+    // Only flag if not followed by a specific qualifier (number, city, credential)
+    for (const superlative of genericSuperlatives) {
+      const idx = contentLower.indexOf(superlative.toLowerCase());
+      const after = contentLower.substring(idx + superlative.length, idx + superlative.length + 30);
+      const hasSpecific = /\d+|rated|review|star|certif|licens/.test(after);
+      if (!hasSpecific) {
+        issues.push({
+          type: 'generic_superlative',
+          text: `Generic superlative "${superlative}" without specific proof`,
+          severity: 'medium',
+          suggestion: 'Back up superlatives with numbers: "Top-rated (4.9★, 200+ reviews)"'
+        });
+        break; // Only report once
+      }
+    }
+  }
+
+  // Check for empty value propositions ("quality service", "professional team")
+  const emptyValueProps = [
+    /\bquality\s+(?:service|work|results)\b/i,
+    /\bprofessional\s+team\b/i,
+    /\bexperienced\s+(?:team|staff|professionals)\b/i
+  ];
+  for (const pattern of emptyValueProps) {
+    if (pattern.test(content)) {
+      const match = content.match(pattern);
+      issues.push({
+        type: 'empty_value_prop',
+        text: `Empty value proposition: "${match[0]}" — says nothing specific`,
+        severity: 'medium',
+        suggestion: 'Replace with concrete proof: years, certifications, customer count'
+      });
+      break; // Only report once
     }
   }
 

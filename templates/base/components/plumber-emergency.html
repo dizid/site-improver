@@ -1,0 +1,270 @@
+<!-- Plumber Emergency: Urgent 24/7 service with tap-to-call and response guarantee -->
+{{#if isVerifiedEmergency}}
+<section id="emergency" class="emergency-section" aria-labelledby="emergency-heading">
+  <div class="container">
+    <div class="emergency-content">
+      <!-- Pulsing emergency badge -->
+      <div class="emergency-badge pulse-glow" role="status" aria-label="24/7 emergency service available">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        24/7 Emergency Service
+      </div>
+
+      <h2 id="emergency-heading">{{emergency_headline}}</h2>
+      <p class="emergency-subtitle">{{emergency_subtitle}}</p>
+
+      <!-- Large tap-to-call -->
+      {{#if phone}}
+      <a href="tel:{{phone}}" class="emergency-phone" aria-label="Call now: {{phone}}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <span class="emergency-phone-number">{{phone}}</span>
+        <span class="emergency-phone-label">Tap to Call Now</span>
+      </a>
+      {{/if}}
+
+      <!-- Response time guarantee -->
+      {{#if emergency_response_time}}
+      <div class="response-guarantee">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>{{emergency_response_time}}</span>
+      </div>
+      {{/if}}
+
+      <!-- Service features -->
+      <div class="emergency-features">
+        <div class="emergency-feature">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <span>No After-Hours Surcharge</span>
+        </div>
+        <div class="emergency-feature">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <span>Licensed & Insured</span>
+        </div>
+        <div class="emergency-feature">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <span>Upfront Pricing</span>
+        </div>
+        <div class="emergency-feature">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <span>100% Satisfaction Guarantee</span>
+        </div>
+      </div>
+
+      <!-- Service area -->
+      {{#if service_areas}}
+      <div class="service-area">
+        <h3>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Serving Your Area
+        </h3>
+        <div class="area-list">
+          {{#each service_areas}}
+          <span class="area-tag">{{this}}</span>
+          {{/each}}
+        </div>
+      </div>
+      {{else}}
+      <div class="service-area">
+        <h3>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Serving Your Area
+        </h3>
+        <p class="area-radius">Serving a 30-mile radius {{#if city}}around {{city}}{{/if}}</p>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+
+  <style>
+    .emergency-section {
+      padding: var(--section-padding, 4rem) 0;
+      background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 40%, #b91c1c 100%);
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+    .emergency-section::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(251,191,36,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .emergency-content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    /* Pulsing badge */
+    .emergency-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.5rem;
+      background: rgba(251, 191, 36, 0.15);
+      border: 2px solid #fbbf24;
+      border-radius: 2rem;
+      color: #fbbf24;
+      font-weight: 800;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1.5rem;
+    }
+    .pulse-glow {
+      animation: pulseGlow 2s ease-in-out infinite;
+    }
+    @keyframes pulseGlow {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4);
+      }
+      50% {
+        box-shadow: 0 0 20px 8px rgba(251, 191, 36, 0.2);
+      }
+    }
+
+    .emergency-section h2 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+      color: white;
+      line-height: 1.15;
+    }
+    .emergency-subtitle {
+      font-size: 1.15rem;
+      color: rgba(255,255,255,0.8);
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    /* Large phone CTA */
+    .emergency-phone {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 1.25rem 3rem;
+      background: #fbbf24;
+      color: #7f1d1d;
+      border-radius: 1rem;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-bottom: 1.5rem;
+    }
+    .emergency-phone:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 32px rgba(251, 191, 36, 0.4);
+    }
+    .emergency-phone svg {
+      color: #7f1d1d;
+    }
+    .emergency-phone-number {
+      font-size: 2rem;
+      font-weight: 800;
+      font-family: var(--font-heading, inherit);
+      letter-spacing: 0.03em;
+      line-height: 1.2;
+    }
+    .emergency-phone-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      opacity: 0.8;
+    }
+
+    /* Response guarantee */
+    .response-guarantee {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: rgba(255,255,255,0.1);
+      border-radius: 0.5rem;
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Features */
+    .emergency-features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+    @media (min-width: 640px) {
+      .emergency-features {
+        grid-template-columns: repeat(4, 1fr);
+        text-align: center;
+      }
+    }
+    .emergency-feature {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.9);
+    }
+    @media (min-width: 640px) {
+      .emergency-feature {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+    }
+    .emergency-feature svg {
+      color: #fbbf24;
+      flex-shrink: 0;
+    }
+
+    /* Service area */
+    .service-area {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.15);
+    }
+    .service-area h3 {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: white;
+    }
+    .area-list {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .area-tag {
+      padding: 0.3rem 0.9rem;
+      background: rgba(255,255,255,0.1);
+      border-radius: 1.5rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.85);
+    }
+    .area-radius {
+      font-size: 0.95rem;
+      color: rgba(255,255,255,0.7);
+    }
+
+    /* Reduce animation for accessibility */
+    @media (prefers-reduced-motion: reduce) {
+      .pulse-glow {
+        animation: none;
+      }
+    }
+  </style>
+</section>
+{{/if}}

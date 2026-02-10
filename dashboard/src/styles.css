@@ -50,6 +50,11 @@
   box-sizing: border-box;
 }
 
+*:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg-primary);
@@ -57,6 +62,7 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app {
@@ -238,6 +244,25 @@ body {
   border-radius: var(--radius-md);
   padding: 1rem;
   border: 1px solid var(--border-color);
+}
+
+/* Mobile pipeline scroll snapping */
+@media (max-width: 768px) {
+  .pipeline-view {
+    padding: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pipeline-stages {
+    gap: 0.75rem;
+  }
+
+  .pipeline-stage {
+    flex: 0 0 80vw;
+    scroll-snap-align: start;
+  }
 }
 
 .stage-header {
@@ -771,6 +796,12 @@ body {
   cursor: pointer;
   border: none;
   transition: all var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn:disabled {
@@ -1215,6 +1246,13 @@ body {
   color: #212529;
 }
 
+.email-client-body-iframe {
+  width: 100%;
+  min-height: 300px;
+  border: none;
+  background: white;
+}
+
 .email-client-body a {
   color: var(--accent-blue);
 }
@@ -1309,6 +1347,31 @@ body {
 .empty-state .muted {
   font-size: 0.875rem;
   margin-top: 0.5rem;
+}
+
+.empty-state-enhanced {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.empty-icon {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.empty-heading {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-description {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  margin: 0;
 }
 
 .muted {
@@ -1489,6 +1552,40 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================
+   TOUCH TARGET UTILITIES
+   ============================ */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+button:not(.mobile-menu-btn):not(.modal-close):not(.tab-btn),
+a:not(.preview-link):not(.mobile-nav a):not(.tab-item),
+input[type="checkbox"],
+select {
+  min-height: 44px;
+}
+
+@media (max-width: 768px) {
+  .btn {
+    min-height: 48px;
+  }
+
+  .btn-sm {
+    min-height: 44px;
+  }
+
+  input[type="text"],
+  input[type="url"],
+  input[type="search"],
+  input[type="email"],
+  select,
+  textarea {
+    min-height: 48px;
+  }
 }
 
 /* ============================

@@ -1,0 +1,66 @@
+{
+  "id": "plumber",
+  "name": "Plumbing Services",
+  "keywords": ["plumber", "plumbing", "drain", "pipe", "water heater", "sewer", "leak", "faucet", "toilet", "clog", "water line", "emergency plumber", "gas line", "sump pump"],
+
+  "sections": [
+    "header",
+    "hero",
+    "plumber-emergency",
+    "services-grid",
+    "why-us",
+    "testimonials",
+    "cta-banner",
+    "contact-section",
+    "footer"
+  ],
+
+  "slots": {
+    "headline": {
+      "source": "headlines[0]",
+      "fallback": "Fast, Reliable Plumbing You Can Count On",
+      "aiEnhance": true
+    },
+    "subheadline": {
+      "source": "paragraphs[0]",
+      "fallback": "Licensed plumbers ready to solve your plumbing problems right the first time",
+      "aiEnhance": true,
+      "maxLength": 150
+    },
+    "cta_text": {
+      "source": null,
+      "fallback": "Get a Free Estimate"
+    },
+    "services_headline": {
+      "source": null,
+      "fallback": "Our Plumbing Services"
+    },
+    "why_us_headline": {
+      "source": null,
+      "fallback": "Why Choose Us"
+    },
+    "emergency_headline": {
+      "source": null,
+      "fallback": "Plumbing Emergency? We're On It."
+    },
+    "emergency_subtitle": {
+      "source": null,
+      "fallback": "Burst pipes, flooding, or backed-up drains don't wait — and neither do we. Our emergency team is standing by around the clock."
+    },
+    "hero_image": {
+      "source": "images[0].src",
+      "fallback": null
+    }
+  },
+
+  "colorMapping": {
+    "primary": "colors[0]",
+    "secondary": "colors[1]",
+    "accent": "colors[2]",
+    "fallback": {
+      "primary": "#1d4ed8",
+      "secondary": "#2563eb",
+      "accent": "#f59e0b"
+    }
+  }
+}

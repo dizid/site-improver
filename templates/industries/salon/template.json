@@ -6,6 +6,7 @@
   "sections": [
     "header",
     "hero",
+    "salon-portfolio",
     "services-grid",
     "why-us",
     "testimonials",
@@ -33,6 +34,14 @@
     "services_headline": {
       "source": null,
       "fallback": "Our Services"
+    },
+    "portfolio_title": {
+      "source": null,
+      "fallback": "Our Work"
+    },
+    "portfolio_subtitle": {
+      "source": null,
+      "fallback": "Browse our latest transformations and find your inspiration"
     },
     "hero_image": {
       "source": "images[0].src",

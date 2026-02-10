@@ -6,6 +6,7 @@
   "sections": [
     "header",
     "hero",
+    "lawyer-case-results",
     "services-grid",
     "why-us",
     "testimonials",
@@ -13,7 +14,7 @@
     "contact-section",
     "footer"
   ],
-  
+
   "slots": {
     "headline": {
       "source": "headlines[0]",
@@ -37,6 +38,14 @@
     "why_us_headline": {
       "source": null,
       "fallback": "Why Choose Our Firm"
+    },
+    "case_results_title": {
+      "source": null,
+      "fallback": "Our Track Record"
+    },
+    "case_results_subtitle": {
+      "source": null,
+      "fallback": "Proven results that speak for themselves"
     },
     "hero_image": {
       "source": "images[0].src",

@@ -729,6 +729,10 @@ export class TemplateBuilder {
     slots.variantName = personality;
     slots.year = new Date().getFullYear();
 
+    // Emergency service flag for urgency indicators in hero
+    const EMERGENCY_INDUSTRIES = ['plumber', 'electrician', 'hvac', 'roofing', 'home-services'];
+    slots.isEmergencyService = EMERGENCY_INDUSTRIES.includes(industry);
+
     // Store design config for CSS generation
     siteData._designConfig = designConfig;
     siteData._personality = personality;
@@ -804,6 +808,29 @@ export class TemplateBuilder {
       });
     }
 
+    // Flatten trust signals for template access
+    const trust = resolved.trustSignals || {};
+    if (trust.yearsInBusiness && !resolved.years_in_business) {
+      resolved.years_in_business = trust.yearsInBusiness;
+    }
+    if (trust.customerCount && !resolved.customer_count) {
+      resolved.customer_count = trust.customerCount;
+    }
+
+    // Process testimonials - add initials and relative dates for display
+    if (Array.isArray(resolved.testimonials)) {
+      const relativeDates = ['2 weeks ago', '1 month ago', '3 weeks ago', '1 week ago', '2 months ago'];
+      resolved.testimonials = resolved.testimonials.map((t, i) => {
+        const author = t.author || 'Customer';
+        const initial = author.charAt(0).toUpperCase();
+        return {
+          ...t,
+          initial,
+          relative_date: t.relative_date || relativeDates[i % relativeDates.length]
+        };
+      });
+    }
+
     return resolved;
   }
 
@@ -818,9 +845,47 @@ export class TemplateBuilder {
     const personality = siteData._personality || designSystem.selectPersonality(siteData);
     const designConfig = siteData._designConfig || designSystem.personalities[personality] || designSystem.personalities[designSystem.defaultPersonality];
 
-    // Resolve icon names to actual SVG HTML and add design system info
+    // Emergency service flag for urgency indicators in hero
+    const EMERGENCY_INDUSTRIES = ['plumber', 'electrician', 'hvac', 'roofing', 'home-services'];
+
+    // Helper function to check for emergency keywords in scraped content
+    const checkEmergencyKeywords = (siteData) => {
+      const text = [
+        siteData.headline || '',
+        siteData.subheadline || '',
+        siteData.aboutText || '',
+        ...(siteData.services || []).map(s => typeof s === 'string' ? s : s.name || '')
+      ].join(' ').toLowerCase();
+      return /24\s*\/?\s*7|emergency|after.hours|urgent|same.day/i.test(text);
+    };
+
+    // Helper to check for Licensed & Insured mention
+    const checkLicensedAndInsured = (siteData) => {
+      const text = [
+        siteData.headline || '',
+        siteData.subheadline || '',
+        siteData.aboutText || '',
+        ...(siteData.services || []).map(s => typeof s === 'string' ? s : s.name || ''),
+        ...(siteData.paragraphs || [])
+      ].join(' ').toLowerCase();
+      return /licen[sc]ed|insured|bonded/i.test(text);
+    };
+
+    // Data availability flags for conditional template sections
+    const dataFlags = {
+      hasCaseResults: !!(siteData.caseResults?.length || siteData.trustSignals?.settlements),
+      hasMenuItems: !!(siteData.menuItems?.length),
+      hasBeforeAfterImages: !!(siteData.beforeAfterImages?.length || siteData.smile_cases?.length),
+      isVerifiedEmergency: checkEmergencyKeywords(siteData),
+      hasRealEstateListings: !!(siteData.listings?.length),
+      hasSalonPortfolio: !!(siteData.portfolio_items?.length),
+      isLicensedAndInsured: checkLicensedAndInsured(siteData)
+    };
+
+    // Resolve icon names to actual SVG HTML and add design system info with layout tokens
     const slotsWithIcons = {
       ...this.resolveIcons(polishedSlots),
+      ...dataFlags,
       heroVariant: designConfig.heroStyle || 'split',
       cardStyle: designConfig.cardStyle || 'bordered',
       sectionDivider: designConfig.sectionDivider || 'wave',
@@ -828,8 +893,15 @@ export class TemplateBuilder {
       animationStyle: designConfig.animations || 'professional',
       spacingStyle: designConfig.spacing || 'normal',
       shadowStyle: designConfig.shadows || 'medium',
+      // Layout differentiation tokens
+      heroLayout: designConfig.heroLayout || 'centered',
+      cardStyleVariant: designConfig.cardStyleVariant || 'elevated',
+      buttonStyleVariant: designConfig.buttonStyleVariant || 'solid',
+      animationIntensity: designConfig.animationIntensity || 'moderate',
+      sectionSpacing: designConfig.sectionSpacing || 'normal',
       personality,
-      variantName: personality
+      variantName: personality,
+      isEmergencyService: EMERGENCY_INDUSTRIES.includes(industry)
     };
 
     // Store for CSS generation
@@ -888,17 +960,29 @@ export class TemplateBuilder {
       ? `style="--hero-bg-image: url('${heroImage}')"`
       : '';
 
-    // Build body classes for design system hooks
+    // Build body classes for design system hooks with layout variants
+    const heroLayout = designConfig.heroLayout || 'centered';
+    const cardStyleVariant = designConfig.cardStyleVariant || 'elevated';
+    const buttonStyleVariant = designConfig.buttonStyleVariant || 'solid';
+    const animationIntensity = designConfig.animationIntensity || 'moderate';
+    const sectionSpacing = designConfig.sectionSpacing || 'normal';
+
     const bodyClasses = [
       `hero-${heroVariant}`,
+      `hero--${heroLayout}`,
       `card-${designConfig.cardStyle || 'bordered'}`,
+      `card-${cardStyleVariant}`,
       `spacing-${designConfig.spacing || 'normal'}`,
       `shadows-${designConfig.shadows || 'medium'}`,
       `animations-${designConfig.animations || 'professional'}`,
       `divider-${designConfig.sectionDivider || 'wave'}`,
       `btn-style-${designConfig.buttonStyle || 'solid'}`,
+      `btn-style-${buttonStyleVariant}`,
       `personality-${personality}`
     ].join(' ');
+
+    // Build data attributes for CSS hooks
+    const bodyDataAttrs = `data-hero-layout="${heroLayout}" data-card-style="${cardStyleVariant}" data-btn-style="${buttonStyleVariant}" data-animation="${animationIntensity}" data-spacing="${sectionSpacing}"`;
 
     // Generate JSON-LD structured data
     const jsonLd = this.generateStructuredData(siteData, slots);
@@ -910,6 +994,22 @@ export class TemplateBuilder {
     // Order: base CSS → design system CSS (overrides) → custom CSS (specific overrides)
     const combinedCSS = `${baseCSS}\n${designSystemCSS}\n${customCSS}`;
     const minifiedCSS = this.minifyCSS(combinedCSS);
+
+    // Build sticky mobile CTA HTML
+    const phone = siteData.phone || slots.phone || '';
+    const ctaText = slots.cta_text || 'Get a Quote';
+    const stickyCta = phone ? `
+<div class="mobile-sticky-cta" aria-label="Quick contact">
+  <a href="tel:${phone.replace(/[^+\d]/g, '')}" class="sticky-phone">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+    ${phone}
+  </a>
+  <a href="#contact" class="sticky-cta-btn">${ctaText}</a>
+</div>` : '';
+
+    // Add section dividers between sections
+    const sectionDividerType = designConfig.sectionDivider || 'wave';
+    const sectionsHtml = this.addSectionDividers(sections.join('\n'), sectionDividerType);
 
     return `<!DOCTYPE html>
 <html lang="${language}">
@@ -925,16 +1025,53 @@ export class TemplateBuilder {
   <style>${minifiedCSS}</style>
   ${jsonLd}
 </head>
-<body class="${bodyClasses}">
+<body class="${bodyClasses}" ${bodyDataAttrs}>
 <main id="main-content">
-${sections.join('\n').replace('<section class="hero"', `<section class="hero hero--${heroVariant}" ${heroStyle}`)}
+${sectionsHtml.replace('<section class="hero"', `<section class="hero hero--${heroLayout}" ${heroStyle}`)}
 </main>
+${stickyCta}
 ${this.getMobileMenuScript()}
 ${this.getScrollAnimationScript()}
 ${this.getGalleryLightboxScript()}
 ${this.getAnalyticsScript()}
 </body>
 </html>`;
+  }
+
+  /**
+   * Add section divider classes between sections for smooth visual transitions
+   * Uses wave dividers for most transitions, diagonal before CTA sections
+   */
+  addSectionDividers(sectionsHtml, dividerType = 'wave') {
+    // Map of section classes to the divider type they should use
+    const dividerMap = {
+      'cta-banner': 'diagonal',
+      'contact-section': 'wave',
+      'testimonials-section': 'curve',
+      'services-section': 'wave',
+      'why-us-section': 'wave',
+      'pricing-section': 'wave',
+      'faq-section': 'wave',
+      'gallery-section': 'wave',
+      'team-section': 'wave',
+      'locations-section': 'wave'
+    };
+
+    // Add divider class to sections that precede another section
+    // We insert the divider on the preceding section so the transition flows into the next
+    return sectionsHtml.replace(
+      /(<section\s+class="([^"]*)")/g,
+      (match, fullTag, classes) => {
+        // Don't add divider to hero, footer, or sections that already have dividers
+        if (classes.includes('hero') || classes.includes('site-footer') || classes.includes('section-divider')) {
+          return match;
+        }
+        // Use divider type from map or the default
+        const sectionType = Object.keys(dividerMap).find(key => classes.includes(key));
+        const chosenDivider = sectionType ? dividerMap[sectionType] : dividerType;
+        return `<section class="${classes} section-divider--${chosenDivider}"`;
+      }
+    );
   }
 
   /**
@@ -1175,49 +1312,220 @@ ${safeJson}
     return `<script>
 (function() {
   // Check for reduced motion preference
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (prefersReducedMotion) return;
 
-  // Add fade-in-up class to animatable elements
-  const animatableSelectors = [
-    '.service-card',
-    '.why-us-item',
-    '.testimonial',
-    '.contact-info',
-    '.contact-form',
-    '.team-card',
-    '.gallery-item',
-    '.pricing-card',
-    '.faq-item',
-    '.location-card'
+  // --- Staggered Scroll Animations ---
+  var staggerContainers = [
+    { parent: '.services-grid', child: '.service-card' },
+    { parent: '.why-us-grid', child: '.why-us-item' },
+    { parent: '.testimonials-grid', child: '.testimonial' },
+    { parent: '.team-grid', child: '.team-card' },
+    { parent: '.gallery-grid', child: '.gallery-item' },
+    { parent: '.pricing-grid', child: '.pricing-card' },
+    { parent: '.faq-list', child: '.faq-item' },
+    { parent: '.locations-grid', child: '.location-card' },
+    { parent: '.menu-grid', child: '.menu-item' },
+    { parent: '.results-stats', child: '.stat-card' },
+    { parent: '.ba-grid', child: '.ba-card' },
+    { parent: '.portfolio-grid', child: '.portfolio-item' },
+    { parent: '.listings-grid', child: '.listing-card' }
   ];
 
-  animatableSelectors.forEach(function(selector) {
+  // Apply stagger-child class with delay custom properties
+  staggerContainers.forEach(function(cfg) {
+    document.querySelectorAll(cfg.parent).forEach(function(container) {
+      var children = container.querySelectorAll(cfg.child);
+      children.forEach(function(child, i) {
+        child.classList.add('stagger-child');
+        child.style.setProperty('--stagger-delay', (i * 0.1) + 's');
+      });
+    });
+  });
+
+  // Standalone elements that fade in without stagger
+  var standAloneSelectors = [
+    '.contact-info',
+    '.contact-form',
+    '.cta-banner .container',
+    '.about-content',
+    '.portfolio-item',
+    '.trust-stack',
+    '.social-proof-counters'
+  ];
+  standAloneSelectors.forEach(function(sel) {
+    document.querySelectorAll(sel).forEach(function(el) {
+      if (!el.classList.contains('stagger-child')) {
+        el.classList.add('scroll-fade-up');
+      }
+    });
+  });
+
+  // Section headings and subtitles get scroll reveal
+  document.querySelectorAll(
+    '.services-section h2, .why-us-section h2, .testimonials-section h2, ' +
+    '.contact-section h2, .team-section h2, .gallery-section h2, ' +
+    '.pricing-section h2, .faq-section h2, .locations-section h2, ' +
+    '.section-subtitle'
+  ).forEach(function(el) {
+    el.classList.add('scroll-fade-up');
+  });
+
+  // Legacy: also add fade-in-up for backward compat
+  var legacySelectors = [
+    '.service-card', '.why-us-item', '.testimonial',
+    '.contact-info', '.contact-form', '.team-card',
+    '.gallery-item', '.pricing-card', '.faq-item', '.location-card'
+  ];
+  legacySelectors.forEach(function(selector) {
     document.querySelectorAll(selector).forEach(function(el) {
       el.classList.add('fade-in-up');
     });
   });
 
-  // Intersection Observer for scroll animations
-  const observer = new IntersectionObserver(function(entries) {
+  // --- IntersectionObserver for all scroll-triggered elements ---
+  var scrollObserver = new IntersectionObserver(function(entries) {
     entries.forEach(function(entry) {
       if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
         entry.target.classList.add('visible');
-        observer.unobserve(entry.target);
+        scrollObserver.unobserve(entry.target);
       }
     });
   }, {
-    threshold: 0.1,
+    threshold: 0.15,
     rootMargin: '0px 0px -50px 0px'
   });
 
-  document.querySelectorAll('.fade-in-up').forEach(function(el) {
-    observer.observe(el);
+  document.querySelectorAll(
+    '.scroll-fade-up, .scroll-slide-left, .scroll-slide-right, ' +
+    '.scroll-scale-in, .scroll-reveal, .stagger-child, .fade-in-up, .stat-counter'
+  ).forEach(function(el) {
+    scrollObserver.observe(el);
   });
 
-  // Add pulse effect to primary CTA after delay
+  // --- Stat Number Counter Animation ---
+  function animateCounter(el) {
+    var text = el.textContent.trim();
+    var match = text.match(/^([\\$]?)(\\d+)(\\+|%|\\s|$|K|\\+?\\s*Years?|\\+?\\s*Customers?)/i);
+    if (!match) return;
+
+    var prefix = match[1] || '';
+    var target = parseInt(match[2], 10);
+    var suffix = match[3] || '';
+    var rest = text.slice(match[0].length);
+
+    if (isNaN(target) || target <= 0) return;
+
+    el.textContent = prefix + '0' + suffix + rest;
+
+    var duration = Math.min(2000, Math.max(800, target * 20));
+    var startTime = null;
+
+    function step(timestamp) {
+      if (!startTime) startTime = timestamp;
+      var progress = Math.min((timestamp - startTime) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      var current = Math.round(eased * target);
+      el.textContent = prefix + current + suffix + rest;
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = prefix + target + suffix + rest;
+      }
+    }
+
+    requestAnimationFrame(step);
+  }
+
+  var statObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        animateCounter(entry.target);
+        statObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.5 });
+
+  document.querySelectorAll('.why-us-item h3, .stat-number, [data-counter]').forEach(function(el) {
+    if (/^[\\$]?\\d+/.test(el.textContent.trim())) {
+      el.classList.add('stat-counter');
+      statObserver.observe(el);
+    }
+  });
+
+  // --- Parallax Scroll Effect for Hero ---
+  var heroImages = document.querySelectorAll('.hero-image img');
+  var heroSection = document.querySelector('.hero');
+
+  if (heroImages.length > 0 && heroSection) {
+    var parallaxTicking = false;
+    function updateParallax() {
+      var scrollY = window.scrollY || window.pageYOffset;
+      var heroBottom = heroSection.offsetTop + heroSection.offsetHeight;
+      if (scrollY < heroBottom) {
+        var rate = scrollY * 0.3;
+        heroImages.forEach(function(el) {
+          el.style.transform = 'translateY(' + rate + 'px) scale(1.05)';
+        });
+      }
+      parallaxTicking = false;
+    }
+
+    window.addEventListener('scroll', function() {
+      if (!parallaxTicking) {
+        requestAnimationFrame(updateParallax);
+        parallaxTicking = true;
+      }
+    }, { passive: true });
+  }
+
+  // --- Sticky Mobile CTA ---
+  var stickyCta = document.querySelector('.mobile-sticky-cta');
+  if (stickyCta && heroSection) {
+    var stickyObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          stickyCta.classList.remove('is-visible');
+          document.body.classList.remove('has-sticky-cta');
+        } else {
+          stickyCta.classList.add('is-visible');
+          document.body.classList.add('has-sticky-cta');
+        }
+      });
+    }, { threshold: 0 });
+
+    stickyObserver.observe(heroSection);
+  }
+
+  // --- Button Ripple Effect ---
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.btn-primary, .contact-form button, .sticky-cta-btn');
+    if (!btn) return;
+
+    var rect = btn.getBoundingClientRect();
+    var ripple = document.createElement('span');
+    var size = Math.max(rect.width, rect.height) * 2;
+
+    ripple.style.cssText = 'position:absolute;border-radius:50%;background:rgba(255,255,255,0.3);pointer-events:none;' +
+      'width:' + size + 'px;height:' + size + 'px;' +
+      'left:' + (e.clientX - rect.left - size / 2) + 'px;' +
+      'top:' + (e.clientY - rect.top - size / 2) + 'px;' +
+      'transform:scale(0);animation:rippleExpand 0.6s ease-out forwards;';
+
+    btn.style.position = 'relative';
+    btn.style.overflow = 'hidden';
+    btn.appendChild(ripple);
+
+    setTimeout(function() {
+      if (ripple.parentNode) ripple.parentNode.removeChild(ripple);
+    }, 700);
+  });
+
+  // --- CTA Pulse after delay ---
   setTimeout(function() {
-    const heroCta = document.querySelector('.hero .btn-primary');
+    var heroCta = document.querySelector('.hero .btn-primary');
     if (heroCta) {
       heroCta.classList.add('pulse');
     }

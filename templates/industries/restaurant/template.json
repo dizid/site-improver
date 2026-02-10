@@ -6,13 +6,14 @@
   "sections": [
     "header",
     "hero",
+    "restaurant-menu",
     "services-grid",
     "testimonials",
     "cta-banner",
     "contact-section",
     "footer"
   ],
-  
+
   "slots": {
     "headline": {
       "source": "headlines[0]",
@@ -32,6 +33,14 @@
     "services_headline": {
       "source": null,
       "fallback": "Our Menu"
+    },
+    "menu_title": {
+      "source": null,
+      "fallback": "Our Menu"
+    },
+    "menu_subtitle": {
+      "source": null,
+      "fallback": "Crafted with fresh, locally-sourced ingredients"
     },
     "hero_image": {
       "source": "images[0].src",

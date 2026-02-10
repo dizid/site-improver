@@ -1,13 +1,13 @@
 {
-  "id": "real-estate",
-  "name": "Real Estate",
-  "keywords": ["real estate", "realtor", "realty", "homes", "houses", "property", "properties", "buying", "selling", "listings", "mls", "broker", "agent", "mortgage", "condo", "apartment", "commercial"],
-  
+  "id": "dentist",
+  "name": "Dental Practice",
+  "keywords": ["dentist", "dental", "teeth", "orthodontist", "oral", "smile", "whitening", "implant", "veneer", "invisalign", "braces", "cleaning", "cavity", "root canal", "crown"],
+
   "sections": [
     "header",
     "hero",
-    "real-estate-listings",
     "services-grid",
+    "dentist-before-after",
     "why-us",
     "testimonials",
     "cta-banner",
@@ -18,49 +18,49 @@
   "slots": {
     "headline": {
       "source": "headlines[0]",
-      "fallback": "Find Your Dream Home Today",
+      "fallback": "Your Best Smile Starts Here",
       "aiEnhance": true
     },
     "subheadline": {
       "source": "paragraphs[0]",
-      "fallback": "Expert guidance through every step of your real estate journey",
+      "fallback": "Gentle, personalized dental care for the whole family in a comfortable setting",
       "aiEnhance": true,
       "maxLength": 150
     },
     "cta_text": {
       "source": null,
-      "fallback": "View Listings"
+      "fallback": "Book an Appointment"
     },
     "services_headline": {
       "source": null,
-      "fallback": "Our Services"
+      "fallback": "Our Dental Services"
     },
     "why_us_headline": {
       "source": null,
-      "fallback": "Why Work With Us"
+      "fallback": "Why Choose Our Practice"
     },
-    "listings_title": {
+    "smile_gallery_title": {
       "source": null,
-      "fallback": "Featured Listings"
+      "fallback": "Smile Transformations"
     },
-    "listings_subtitle": {
+    "smile_gallery_subtitle": {
       "source": null,
-      "fallback": "Explore our handpicked selection of properties"
+      "fallback": "See the real results our patients are smiling about"
     },
     "hero_image": {
       "source": "images[0].src",
       "fallback": null
     }
   },
-  
+
   "colorMapping": {
     "primary": "colors[0]",
     "secondary": "colors[1]",
     "accent": "colors[2]",
     "fallback": {
       "primary": "#0d9488",
-      "secondary": "#059669",
-      "accent": "#f97316"
+      "secondary": "#0891b2",
+      "accent": "#06b6d4"
     }
   }
 }

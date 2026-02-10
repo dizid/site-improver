@@ -96,7 +96,29 @@ export const CONFIG = {
       fullSite: 1000,         // For entire site polish
       optimize: 1200          // For CRO optimization step
     },
-    concurrency: 3            // Max parallel AI requests
+    concurrency: 3,           // Max parallel AI requests
+    // Industry-calibrated quality thresholds (lower for simpler industries)
+    qualityThreshold: {
+      plumber: 75,            // Simpler content is fine
+      electrician: 75,
+      hvac: 75,
+      'home-services': 75,
+      roofing: 75,
+      landscaping: 77,
+      cleaning: 77,
+      auto: 75,
+      restaurant: 80,         // Descriptive quality matters
+      dentist: 80,
+      'real-estate': 80,
+      salon: 78,
+      lawyer: 85,             // Highest standard
+      accountant: 82,
+      insurance: 82,
+      retail: 78,
+      general: 78,
+      default: 78             // Fallback for unknown industries
+    },
+    maxOptimizationPasses: 3  // Max CRO optimization passes to prevent runaway costs
   },
 
   // Cleanup configuration

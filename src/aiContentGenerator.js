@@ -6,7 +6,7 @@ import logger from './logger.js';
 import { CONFIG } from './config.js';
 import { extractCity, safeParseJsonObject } from './utils.js';
 import { getIndustryContent } from './industryContent.js';
-import { validateContent, validateHeadline, getRegenerationPrompt, checkEmotionalResonance, scoreCTAEffectiveness } from './contentValidator.js';
+import { validateContent, validateHeadline, getRegenerationPrompt, checkEmotionalResonance, scoreCTAEffectiveness, assessContentQuality, hasCliche } from './contentValidator.js';
 import { generateHeadlineOptions, validateAgainstFormulas } from './headlineFormulas.js';
 import { getToneProfile, generateToneGuidance } from './toneProfiles.js';
 
@@ -36,10 +36,11 @@ export class AIContentGenerator {
   /**
    * Generate complete website content from scraped site data
    * Includes validation and retry logic for cliché detection
+   * CONSOLIDATED: Single API call generates brand voice, headlines, and all content
    */
   async generateAllContent(siteData, industry, maxRetries = 2) {
     const startTime = Date.now();
-    log.info('Generating all content with AI', {
+    log.info('Generating all content with AI (consolidated call)', {
       business: siteData.businessName,
       industry
     });
@@ -49,6 +50,12 @@ export class AIContentGenerator {
 
     // Get industry-specific content hints
     const industryContent = getIndustryContent(industry);
+
+    // Get seasonal context for this industry
+    const seasonalContext = this.getSeasonalContext(industry);
+
+    // Get readability target for this industry
+    const readabilityTarget = this.getReadabilityTarget(industry);
 
     // Validation context for content checks
     const validationContext = {
@@ -64,20 +71,46 @@ export class AIContentGenerator {
       attempt++;
 
       // Build the comprehensive prompt (with rejection feedback if retrying)
-      const prompt = this.buildComprehensivePrompt(context, industryContent, rejectionFeedback);
+      const prompt = this.buildComprehensivePrompt(context, industryContent, rejectionFeedback, {
+        seasonalContext,
+        readabilityTarget
+      });
 
       try {
         const response = await this.getClient().messages.create({
           model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
-          max_tokens: 2000,
+          max_tokens: 2500,
           system: this.getSystemPrompt(context.language, industry),
           messages: [{ role: 'user', content: prompt }]
         });
 
         const responseText = response.content[0].text.trim();
 
-        // Parse JSON response
+        // Parse JSON response (now includes brandVoice and headlineVariants)
         const generated = this.parseResponse(responseText);
+
+        // Extract brand voice from response if present
+        const brandVoice = generated.brandVoice || null;
+
+        // Score headline variants if present and pick the best one
+        if (generated.headlineVariants && Array.isArray(generated.headlineVariants) && generated.headlineVariants.length > 0) {
+          const scored = generated.headlineVariants.map(headline => {
+            const mockContent = { headline, subheadline: generated.subheadline || '', ctaPrimary: '', aboutSnippet: '' };
+            const assessment = assessContentQuality(mockContent, validationContext, industry);
+            return { headline, score: assessment.scores?.headline || assessment.overallScore };
+          });
+
+          // Sort by score descending
+          scored.sort((a, b) => b.score - a.score);
+
+          log.info('Headline variants scored', {
+            variants: scored.map(v => ({ headline: v.headline.substring(0, 50), score: v.score })),
+            winner: scored[0].headline.substring(0, 50)
+          });
+
+          // Use the best headline
+          generated.headline = scored[0].headline;
+        }
 
         // Validate content for clichés
         const validationResult = this.validateGeneratedContent(generated, validationContext);
@@ -96,14 +129,16 @@ export class AIContentGenerator {
             generatedAt: new Date().toISOString(),
             generationTime: Date.now() - startTime,
             validationScore: validationResult.score,
-            attempts: attempt
+            attempts: attempt,
+            brandVoice: brandVoice
           };
 
           log.info('Content generation complete', {
             business: result.businessName,
             duration: `${result.generationTime}ms`,
             attempts: attempt,
-            score: validationResult.score
+            score: validationResult.score,
+            brandVoice: brandVoice ? `${brandVoice.formality}/${brandVoice.tone}` : 'defaults'
           });
 
           return result;
@@ -221,6 +256,20 @@ export class AIContentGenerator {
     return `You are an elite direct-response copywriter trained by legends like David Ogilvy, Gary Halbert, and Eugene Schwartz. You write copy that CONVERTS - not just sounds good.
 
 YOUR MISSION: Create website copy that turns visitors into customers. Every word must earn its place.
+
+STEP 1: ANALYZE THE ORIGINAL SITE'S BRAND VOICE
+Before writing, analyze the original content to match their voice:
+- formality: "formal" (corporate, polished), "casual" (relaxed, conversational), or "neutral" (balanced)
+- techLevel: "high" (jargon-heavy), "medium" (some technical), or "low" (plain language)
+- tone: "serious" (authoritative), "warm" (friendly), or "playful" (humorous)
+
+STEP 2: GENERATE 3 HEADLINE VARIANTS
+Create 3 different headline options (5-10 words each):
+- Variant 1: Social proof angle (ratings, customers served, years in business)
+- Variant 2: Pain point + solution angle (problem → fix)
+- Variant 3: Local authority angle (location + specialty + credential)
+
+STEP 3: WRITE COMPLETE CONTENT
 
 COPYWRITING PRINCIPLES YOU MUST FOLLOW:
 
@@ -359,7 +408,8 @@ OUTPUT: Return valid JSON only. No markdown, no explanations, just the JSON obje
     }
   }
 
-  buildComprehensivePrompt(context, industryContent, rejectionFeedback = null) {
+  buildComprehensivePrompt(context, industryContent, rejectionFeedback = null, options = {}) {
+    const { seasonalContext, readabilityTarget } = options;
     const servicesHint = context.scrapedServices.length > 0
       ? `Services found on site: ${context.scrapedServices.join(', ')}`
       : `Typical ${context.industry} services might include: ${industryContent?.services?.slice(0, 4).join(', ') || 'various services'}`;
@@ -413,10 +463,24 @@ ${headlineExamples}
 - Specific numbers: "Serving Boston since 1987" not "Serving you for years"
 - Concrete facts: "Licensed, Insured, BBB A+" not "Trusted professionals"
 - Local specificity: "North Shore's go-to plumber" not "Your local expert"
+${seasonalContext ? `
+📅 SEASONAL CONTEXT (current season priority):
+- ${seasonalContext}
+Weave seasonal relevance into headlines or service descriptions where natural.` : ''}
+${readabilityTarget ? `
+📖 READABILITY TARGET:
+- Write at a ${readabilityTarget.label} level (Grade ${readabilityTarget.min}-${readabilityTarget.max})
+- Use short sentences. Avoid complex words when simple ones work.` : ''}
 
 GENERATE THIS JSON (all fields required):
 {
-  "headline": "5-10 word compelling headline - grab attention, show value",
+  "brandVoice": {
+    "formality": "formal|casual|neutral",
+    "techLevel": "high|medium|low",
+    "tone": "serious|warm|playful"
+  },
+  "headlineVariants": ["headline option 1 (5-10 words)", "headline option 2 (5-10 words)", "headline option 3 (5-10 words)"],
+  "headline": "Your recommended best headline from the 3 variants above",
   "subheadline": "15-25 word supporting statement - expand on headline, build interest",
   "services": [
     {
@@ -462,6 +526,8 @@ REQUIREMENTS:
 
       // Validate required fields
       return {
+        brandVoice: parsed.brandVoice || null,
+        headlineVariants: Array.isArray(parsed.headlineVariants) ? parsed.headlineVariants.slice(0, 3) : [],
         headline: parsed.headline || 'Quality Service You Can Trust',
         subheadline: parsed.subheadline || 'Professional solutions for all your needs',
         services: Array.isArray(parsed.services) ? parsed.services.slice(0, 8) : [],
@@ -492,6 +558,260 @@ REQUIREMENTS:
     };
   }
 
+  /**
+   * @deprecated This method is no longer used. Headline variants are now generated
+   * in the main consolidated generateAllContent() call to save API costs.
+   * Kept for backwards compatibility with tests.
+   *
+   * Generate multiple headline variants and pick the best one
+   * Uses a single API call returning multiple variants for cost efficiency
+   */
+  async generateHeadlineVariants(siteData, industry, count = 3) {
+    const context = this.buildContext(siteData, industry);
+    const industryContent = getIndustryContent(industry);
+    const trustSignalContext = this.buildTrustSignalContext(context.trustSignals);
+
+    const prompt = `Generate exactly ${count} different headline variants for this ${context.industry} business website.
+
+BUSINESS:
+- Name: ${context.businessName}
+- Industry: ${context.industry}
+- Location: ${context.city || 'local area'}
+${context.rating ? `- Rating: ${context.rating}/5 (${context.reviewCount || 'many'} reviews)` : ''}
+${trustSignalContext}
+
+Each headline must be:
+- 5-10 words
+- Specific to this business (use real numbers, location, credentials)
+- Free of clichés ("quality service", "trusted partner", etc.)
+- Different angles (e.g., social proof, pain point, speed, local authority)
+
+Return valid JSON only:
+{"variants": ["headline 1", "headline 2", "headline 3"]}`;
+
+    try {
+      const response = await this.getClient().messages.create({
+        model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: 'You are a headline copywriter. Return valid JSON only. No markdown.',
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const responseText = response.content[0].text.trim();
+      let parsed;
+      try {
+        let jsonStr = responseText;
+        const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) jsonStr = jsonMatch[1].trim();
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        log.warn('Failed to parse headline variants response');
+        return null;
+      }
+
+      const variants = parsed.variants || [];
+      if (variants.length === 0) return null;
+
+      // Score each variant using assessContentQuality
+      const validationContext = {
+        businessName: siteData.businessName,
+        city: context.city,
+        trustSignals: siteData.trustSignals
+      };
+
+      const scored = variants.map(headline => {
+        const assessment = assessContentQuality(
+          { headline, subheadline: '', ctaPrimary: '', aboutSnippet: '' },
+          validationContext,
+          industry
+        );
+        return { headline, score: assessment.overallScore };
+      });
+
+      // Sort by score descending, pick the best
+      scored.sort((a, b) => b.score - a.score);
+
+      log.info('Headline variants scored', {
+        variants: scored.map(v => ({ headline: v.headline.substring(0, 50), score: v.score })),
+        winner: scored[0].headline.substring(0, 50),
+        winnerScore: scored[0].score
+      });
+
+      return {
+        best: scored[0].headline,
+        bestScore: scored[0].score,
+        all: scored
+      };
+    } catch (error) {
+      log.warn('Headline variant generation failed', { error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * @deprecated This method is no longer used. Brand voice extraction is now done
+   * in the main consolidated generateAllContent() call to save API costs.
+   * Kept for backwards compatibility with tests.
+   *
+   * Analyze the original site's tone before generating new content
+   * Returns brand voice characteristics: formality, techLevel, tone
+   */
+  async extractBrandVoice(siteData) {
+    // Check if there's enough content to analyze
+    const textPieces = [
+      ...(siteData.headlines || []),
+      ...(siteData.paragraphs || []).slice(0, 3)
+    ].filter(Boolean);
+
+    const combinedText = textPieces.join(' ').trim();
+
+    // If too sparse, skip extraction and return null (use industry defaults)
+    if (combinedText.length < 50) {
+      log.info('Original content too sparse for brand voice extraction, using industry defaults');
+      return null;
+    }
+
+    const prompt = `Analyze the tone and voice of this business website content and classify it.
+
+CONTENT:
+"${combinedText.substring(0, 1000)}"
+
+Classify along these three dimensions:
+1. formality: "formal" (corporate, polished), "casual" (relaxed, conversational), or "neutral" (balanced)
+2. techLevel: "high" (jargon-heavy, technical terms), "medium" (some technical), or "low" (plain language)
+3. tone: "serious" (authoritative, no-nonsense), "warm" (friendly, caring), or "playful" (humorous, lighthearted)
+
+Return valid JSON only:
+{"formality": "...", "techLevel": "...", "tone": "..."}`;
+
+    try {
+      const response = await this.getClient().messages.create({
+        model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
+        max_tokens: 100,
+        system: 'You are a content analyst. Return valid JSON only. No markdown, no explanations.',
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const responseText = response.content[0].text.trim();
+      let parsed;
+      try {
+        let jsonStr = responseText;
+        const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) jsonStr = jsonMatch[1].trim();
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        log.warn('Failed to parse brand voice response');
+        return null;
+      }
+
+      // Validate the response has the expected fields
+      const validFormalities = ['formal', 'casual', 'neutral'];
+      const validTechLevels = ['high', 'medium', 'low'];
+      const validTones = ['serious', 'warm', 'playful'];
+
+      const result = {
+        formality: validFormalities.includes(parsed.formality) ? parsed.formality : 'neutral',
+        techLevel: validTechLevels.includes(parsed.techLevel) ? parsed.techLevel : 'medium',
+        tone: validTones.includes(parsed.tone) ? parsed.tone : 'warm'
+      };
+
+      log.info('Brand voice extracted', result);
+      return result;
+    } catch (error) {
+      log.warn('Brand voice extraction failed', { error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Get seasonal context for content generation
+   * Returns relevant seasonal themes for industries where seasonality matters
+   */
+  getSeasonalContext(industry) {
+    const month = new Date().getMonth(); // 0-11
+    const season = month >= 2 && month <= 4 ? 'spring'
+      : month >= 5 && month <= 7 ? 'summer'
+      : month >= 8 && month <= 10 ? 'fall'
+      : 'winter';
+
+    const contexts = {
+      plumber: {
+        winter: 'frozen pipes, heating system plumbing, pipe insulation',
+        spring: 'outdoor faucet repair, sump pump checks, water heater flush',
+        summer: 'AC drain lines, outdoor plumbing, sprinkler systems',
+        fall: 'pipe winterization, water heater maintenance, gutter drainage'
+      },
+      hvac: {
+        winter: 'heating repair urgency, furnace breakdowns, emergency heat',
+        spring: 'AC tune-up season, system maintenance, filter changes',
+        summer: 'AC breakdown emergencies, cooling system installs, energy bills',
+        fall: 'furnace inspection, heating system prep, maintenance plans'
+      },
+      landscaping: {
+        winter: 'snow removal, holiday lighting, winter pruning',
+        spring: 'spring cleanup, new plantings, mulching, lawn aeration',
+        summer: 'lawn maintenance, irrigation, pest control, outdoor living',
+        fall: 'leaf removal, fall cleanup, winterization, overseeding'
+      },
+      roofing: {
+        winter: 'ice dam prevention, emergency leak repair, storm damage',
+        spring: 'post-winter inspection, spring storms, gutter cleaning',
+        summer: 'full roof replacement, shingle repair, ventilation',
+        fall: 'pre-winter inspection, storm prep, gutter guards'
+      },
+      electrician: {
+        winter: 'generator installation, holiday lighting safety, heating circuits',
+        spring: 'outdoor electrical, landscape lighting, panel upgrades',
+        summer: 'AC circuit overloads, ceiling fans, outdoor outlets',
+        fall: 'weatherproofing, surge protection, generator prep'
+      },
+      cleaning: {
+        winter: 'holiday cleaning, deep cleaning before guests',
+        spring: 'spring deep clean, window washing, post-winter refresh',
+        summer: 'vacation prep cleaning, regular maintenance',
+        fall: 'back-to-school clean, holiday prep, fall deep clean'
+      },
+      'home-services': {
+        winter: 'winterization, heating maintenance, pipe insulation',
+        spring: 'spring maintenance checklist, exterior repairs',
+        summer: 'outdoor projects, deck repair, painting season',
+        fall: 'fall maintenance, gutter cleaning, winter prep'
+      },
+      auto: {
+        winter: 'winter tires, battery checks, antifreeze, cold start issues',
+        spring: 'spring checkup, brake inspection, alignment',
+        summer: 'AC service, overheating prevention, road trip prep',
+        fall: 'winter prep, tire change, heating system check'
+      }
+    };
+
+    return contexts[industry]?.[season] || null;
+  }
+
+  /**
+   * Get target Flesch-Kincaid grade level for an industry
+   */
+  getReadabilityTarget(industry) {
+    const targets = {
+      plumber: { min: 6, max: 8, label: 'simple, direct language' },
+      electrician: { min: 6, max: 8, label: 'simple, direct language' },
+      hvac: { min: 6, max: 8, label: 'simple, direct language' },
+      restaurant: { min: 7, max: 9, label: 'descriptive but accessible' },
+      lawyer: { min: 10, max: 12, label: 'professional but clear' },
+      dentist: { min: 8, max: 10, label: 'reassuring, clear' },
+      'real-estate': { min: 9, max: 11, label: 'descriptive, sophisticated' },
+      roofing: { min: 6, max: 8, label: 'simple, direct language' },
+      landscaping: { min: 7, max: 9, label: 'descriptive but accessible' },
+      cleaning: { min: 6, max: 8, label: 'simple, direct language' },
+      auto: { min: 6, max: 8, label: 'simple, direct language' },
+      insurance: { min: 8, max: 10, label: 'clear, reassuring' },
+      accountant: { min: 8, max: 10, label: 'clear, reassuring' },
+      general: { min: 8, max: 10, label: 'balanced readability' }
+    };
+
+    return targets[industry] || targets.general;
+  }
+
   getFallbackContent(siteData, industry) {
     const industryContent = getIndustryContent(industry);
     const city = extractCity(siteData.address) || 'your area';
@@ -511,16 +831,28 @@ REQUIREMENTS:
       headline = `${businessName} — ${city} ${industryLabel}`;
     }
 
+    // Check headline for clichés and replace if found
+    if (hasCliche(headline)) {
+      log.warn('Fallback headline contains cliché, using simpler version', { headline });
+      headline = `${businessName} — ${industryLabel} in ${city}`;
+    }
+
     // Build subheadline from trust signals or industry content
     let subheadline;
     if (trust.certifications?.length > 0) {
       subheadline = `${trust.certifications[0]} • Serving ${city}`;
     } else if (siteData.reviewCount && siteData.reviewCount >= 10) {
-      subheadline = `Trusted by ${siteData.reviewCount}+ customers in ${city}`;
+      subheadline = `${siteData.reviewCount}+ customers served in ${city}`;
     } else if (industryContent.benefits?.[0]) {
       subheadline = industryContent.benefits[0];
     } else {
-      subheadline = `Your local ${industryLabel.toLowerCase()} team in ${city}`;
+      subheadline = `Local ${industryLabel.toLowerCase()} team in ${city}`;
+    }
+
+    // Check subheadline for clichés and replace if found
+    if (hasCliche(subheadline)) {
+      log.warn('Fallback subheadline contains cliché, using simpler version', { subheadline });
+      subheadline = `${industryLabel} serving ${city}`;
     }
 
     // Build why us points from trust signals

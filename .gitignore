@@ -38,3 +38,6 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+# Pipeline cache (scrape data, checkpoints)
+.cache/

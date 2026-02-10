@@ -35,13 +35,21 @@ export class ContentOptimizer {
 
   /**
    * Optimize polished content for higher conversions
+   * Multi-pass: iterates until quality threshold is met (max 3 passes)
    * Includes validation, retry logic, and do-no-harm gate
    */
   async optimizeContent(polishedSlots, siteData, industry, maxRetries = 2) {
     const startTime = Date.now();
+    const qualityThreshold = (typeof CONFIG.ai?.qualityThreshold === 'object')
+      ? (CONFIG.ai.qualityThreshold[industry] || CONFIG.ai.qualityThreshold.default || 78)
+      : (CONFIG.ai?.qualityThreshold || 78);
+    const maxPasses = CONFIG.ai?.maxOptimizationPasses || 3;
+
     log.info('Optimizing content for conversions', {
       business: siteData.businessName,
-      industry
+      industry,
+      qualityThreshold,
+      maxPasses
     });
 
     // Build context from siteData
@@ -55,6 +63,8 @@ export class ContentOptimizer {
       trustSignals: siteData.trustSignals || null
     };
 
+    const qualityContext = { businessName: context.businessName, city: context.city, trustSignals: context.trustSignals };
+
     // Score BEFORE optimization
     const beforeContent = {
       headline: polishedSlots.headline,
@@ -62,112 +72,214 @@ export class ContentOptimizer {
       ctaPrimary: polishedSlots.cta_text,
       aboutSnippet: polishedSlots.about_text
     };
-    const beforeAssessment = assessContentQuality(
-      beforeContent,
-      { businessName: context.businessName, city: context.city, trustSignals: context.trustSignals },
-      industry
-    );
+    const beforeAssessment = assessContentQuality(beforeContent, qualityContext, industry);
     const beforeScore = beforeAssessment.overallScore;
 
     // Get industry-specific content hints
     const industryContent = getIndustryContent(industry);
 
-    let attempt = 0;
-    let rejectionFeedback = null;
+    // Track the best result across all passes
+    let bestSlots = polishedSlots;
+    let bestScore = beforeScore;
+    let slotsWereUpdated = false;
+    let totalAttempts = 0;
+    let totalTokensUsed = 0;
+    let passScores = [beforeScore];
+    let currentSlots = polishedSlots;
 
-    while (attempt <= maxRetries) {
-      attempt++;
-
-      const prompt = this.buildOptimizationPrompt(polishedSlots, context, industryContent, rejectionFeedback);
-
-      try {
-        const response = await this.getClient().messages.create({
-          model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
-          max_tokens: CONFIG.ai?.maxTokens?.optimize || 1200,
-          system: this.getSystemPrompt(context.language, industry),
-          messages: [{ role: 'user', content: prompt }]
+    // Multi-pass optimization loop
+    for (let pass = 1; pass <= maxPasses; pass++) {
+      // If we already meet the threshold, stop
+      if (bestScore >= qualityThreshold && pass > 1) {
+        log.info('Quality threshold met, stopping optimization', {
+          pass,
+          score: bestScore,
+          threshold: qualityThreshold
         });
+        break;
+      }
 
-        const responseText = response.content[0].text.trim();
-        const optimized = this.parseResponse(responseText);
+      let attempt = 0;
+      let rejectionFeedback = null;
 
-        // Validate for cliches
-        const validationResult = validateContent(optimized.headline || '', {
-          businessName: context.businessName,
-          city: context.city
-        });
-
-        if (validationResult.issues.some(i => i.severity === 'high' || i.severity === 'critical') && attempt <= maxRetries) {
-          rejectionFeedback = getRegenerationPrompt(validationResult);
-          log.warn('Optimized content rejected for cliches, retrying', {
-            attempt,
-            issues: validationResult.issues.length
-          });
-          continue;
-        }
-
-        // Map optimized content back to slot format
-        const optimizedSlots = this.mapOptimizedToSlots(optimized, polishedSlots);
-
-        // Score AFTER optimization
-        const afterContent = {
-          headline: optimizedSlots.headline,
-          subheadline: optimizedSlots.subheadline,
-          ctaPrimary: optimizedSlots.cta_text,
-          aboutSnippet: optimizedSlots.about_text
-        };
-        const afterAssessment = assessContentQuality(
-          afterContent,
-          { businessName: context.businessName, city: context.city, trustSignals: context.trustSignals },
+      // Build quality feedback for passes > 1
+      if (pass > 1) {
+        const currentAssessment = assessContentQuality(
+          { headline: currentSlots.headline, subheadline: currentSlots.subheadline, ctaPrimary: currentSlots.cta_text, aboutSnippet: currentSlots.about_text },
+          qualityContext,
           industry
         );
-        const afterScore = afterAssessment.overallScore;
+        rejectionFeedback = this.buildQualityFeedback(currentAssessment);
+      }
 
-        // Do-no-harm gate: only use optimized content if it scores equal or better
-        const improved = afterScore >= beforeScore;
+      while (attempt <= maxRetries) {
+        attempt++;
+        totalAttempts++;
 
-        log.info('Content optimization complete', {
-          business: context.businessName,
-          beforeScore,
-          afterScore,
-          improved,
-          attempts: attempt,
-          duration: `${Date.now() - startTime}ms`
-        });
+        const prompt = this.buildOptimizationPrompt(currentSlots, context, industryContent, rejectionFeedback);
 
-        return {
-          improved,
-          slots: improved ? optimizedSlots : polishedSlots,
-          beforeScore,
-          afterScore,
-          attempts: attempt,
-          duration: Date.now() - startTime
-        };
+        try {
+          const response = await this.getClient().messages.create({
+            model: CONFIG.ai?.model || 'claude-sonnet-4-20250514',
+            max_tokens: CONFIG.ai?.maxTokens?.optimize || 1200,
+            system: this.getSystemPrompt(context.language, industry),
+            messages: [{ role: 'user', content: prompt }]
+          });
 
-      } catch (error) {
-        log.error('Optimization API call failed', { error: error.message, attempt });
-        if (attempt > maxRetries) {
-          return {
-            improved: false,
-            slots: polishedSlots,
-            beforeScore,
-            afterScore: beforeScore,
-            attempts: attempt,
-            duration: Date.now() - startTime
+          // Track token usage
+          if (response.usage) {
+            totalTokensUsed += (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0);
+          }
+
+          const responseText = response.content[0].text.trim();
+          const optimized = this.parseResponse(responseText);
+
+          // Validate for cliches
+          const validationResult = validateContent(optimized.headline || '', {
+            businessName: context.businessName,
+            city: context.city
+          });
+
+          if (validationResult.issues.some(i => i.severity === 'high' || i.severity === 'critical') && attempt <= maxRetries) {
+            rejectionFeedback = getRegenerationPrompt(validationResult);
+            log.warn('Optimized content rejected for cliches, retrying', {
+              pass,
+              attempt,
+              issues: validationResult.issues.length
+            });
+            continue;
+          }
+
+          // Map optimized content back to slot format
+          const optimizedSlots = this.mapOptimizedToSlots(optimized, currentSlots);
+
+          // Score AFTER this pass
+          const afterContent = {
+            headline: optimizedSlots.headline,
+            subheadline: optimizedSlots.subheadline,
+            ctaPrimary: optimizedSlots.cta_text,
+            aboutSnippet: optimizedSlots.about_text
           };
+          const afterAssessment = assessContentQuality(afterContent, qualityContext, industry);
+          const afterScore = afterAssessment.overallScore;
+
+          passScores.push(afterScore);
+
+          log.info('Optimization pass complete', {
+            pass,
+            beforeScore: pass === 1 ? beforeScore : passScores[pass - 1],
+            afterScore,
+            improvement: afterScore - (pass === 1 ? beforeScore : passScores[pass - 1]),
+            totalTokens: totalTokensUsed
+          });
+
+          // Track best result (do-no-harm: only upgrade if strictly better)
+          if (afterScore > bestScore) {
+            bestSlots = optimizedSlots;
+            bestScore = afterScore;
+            currentSlots = optimizedSlots;
+            slotsWereUpdated = true;
+          }
+
+          break; // Move to next pass
+
+        } catch (error) {
+          log.error('Optimization API call failed', { error: error.message, pass, attempt });
+          if (attempt > maxRetries) {
+            break; // Move to next pass or finish
+          }
         }
       }
     }
 
-    // Fallback: return original content unchanged
-    return {
-      improved: false,
-      slots: polishedSlots,
+    // Do-no-harm gate: only use optimized content if it actually scored better
+    const improved = slotsWereUpdated && bestScore > beforeScore;
+
+    log.info('Content optimization complete', {
+      business: context.businessName,
       beforeScore,
-      afterScore: beforeScore,
-      attempts: attempt,
+      afterScore: bestScore,
+      improved,
+      totalAttempts,
+      passScores,
+      totalTokens: totalTokensUsed,
+      duration: `${Date.now() - startTime}ms`
+    });
+
+    return {
+      improved,
+      slots: improved ? bestSlots : polishedSlots,
+      beforeScore,
+      afterScore: bestScore,
+      attempts: totalAttempts,
+      passScores,
+      totalTokensUsed,
       duration: Date.now() - startTime
     };
+  }
+
+  /**
+   * Build specific quality feedback for multi-pass optimization
+   * Tells the AI exactly what needs improvement with concrete examples
+   */
+  buildQualityFeedback(assessment) {
+    const issues = [];
+
+    // Clichés - most critical issue
+    if (assessment.checks.cliches?.found?.length) {
+      issues.push(`Remove these clichés: "${assessment.checks.cliches.found.join('", "')}"`);
+    }
+
+    // Headline issues - specific problems
+    if (assessment.checks.headline?.issues?.length) {
+      assessment.checks.headline.issues.forEach(i => {
+        const text = i.text || i.suggestion || '';
+        if (text) issues.push(`Headline: ${text}`);
+      });
+    } else if (assessment.checks.headline?.score < 70) {
+      issues.push('Headline is weak - needs specific numbers, location, or credentials');
+    }
+
+    // CTA issues - be specific about what's missing
+    if (assessment.checks.cta?.score < 60) {
+      if (assessment.checks.cta?.issues?.length) {
+        issues.push('CTA: ' + assessment.checks.cta.issues.join(', '));
+      } else {
+        issues.push('CTA needs urgency word (today, now, free, instant) and specific benefit');
+      }
+    }
+
+    // Emotional triggers - name what's missing
+    if (assessment.checks.emotional?.missing?.length) {
+      const missing = assessment.checks.emotional.missing.slice(0, 2).map(m => m.description).join(', ');
+      issues.push(`Add emotional triggers: ${missing}`);
+    }
+
+    // Temperature issues - specific fixes
+    if (assessment.checks.temperature?.label === 'hot') {
+      issues.push('Too salesy — replace superlatives with specific facts and numbers');
+    } else if (assessment.checks.temperature?.label === 'cold' || assessment.checks.temperature?.label === 'cool') {
+      issues.push('Too generic — add specific numbers, credentials, or location details');
+    }
+
+    // Length issues
+    if (assessment.checks.lengths) {
+      if (assessment.checks.lengths.headline?.issue) {
+        issues.push(assessment.checks.lengths.headline.issue);
+      }
+      if (assessment.checks.lengths.subheadline?.issue) {
+        issues.push(assessment.checks.lengths.subheadline.issue);
+      }
+      if (assessment.checks.lengths.cta?.issue) {
+        issues.push(assessment.checks.lengths.cta.issue);
+      }
+    }
+
+    if (issues.length === 0) {
+      return 'Previous score: ' + assessment.overallScore + '/100. Minor improvements needed for optimal conversion.';
+    }
+
+    return issues.join('\n');
   }
 
   /**
@@ -245,6 +357,11 @@ OUTPUT: Return valid JSON only. No markdown, no explanations.`;
       ? `\n⚠️ PREVIOUS ATTEMPT REJECTED:\n${rejectionFeedback}\nFix the issues and try again.\n`
       : '';
 
+    // Build location-specific social proof hint
+    const locationProof = context.city
+      ? `- Generate location-specific social proof (e.g., "Trusted by 500+ ${context.city} families")`
+      : '';
+
     return `Optimize this ${context.industry} website copy for higher conversions:
 ${rejectionSection}
 BUSINESS:
@@ -270,16 +387,25 @@ INDUSTRY HINTS:
 - Pain points: ${industryContent?.painPoints?.slice(0, 2).join('; ') || 'Need reliable service'}
 - Power phrases: ${industryContent?.powerPhrases?.slice(0, 3).join(' | ') || 'Honest work. Fair prices.'}
 
+CRO ENHANCEMENTS TO ADD:
+- CTAs: Use urgency words (Today, Now, Fast, Same-Day) and specific time frames (60 seconds, 24 hours)
+${locationProof}
+- Add testimonial-style snippets if none exist (use rating/review data to create credible quotes)
+- Form micro-copy: Add helper text like "Takes 30 seconds" or "We'll respond within 1 hour"
+- Trust micro-copy: Include phrases like "Your information is secure" or "No spam, ever"
+
 RETURN optimized content as JSON with these exact keys:
 {
   "headline": "optimized headline (5-10 words)",
   "subheadline": "optimized subheadline (15-25 words)",
   "services": [{"name": "...", "description": "...", "icon": "..."}],
   "why_us_points": [{"title": "...", "description": "..."}],
-  "cta_text": "primary CTA (2-5 words)",
+  "cta_text": "primary CTA with urgency (2-5 words, e.g. 'Get Free Quote Today')",
   "cta_secondary": "secondary CTA (2-5 words)",
   "about_text": "4-sentence about section",
-  "meta_description": "SEO description (max 155 chars)"
+  "meta_description": "SEO description (max 155 chars)",
+  "form_helper_text": "micro-copy for form (e.g., 'Takes 30 seconds • We respond within 1 hour')",
+  "location_social_proof": "location-specific proof if city provided (e.g., 'Trusted by 500+ Denver families')"
 }
 
 Keep service count and why_us count the same as input. Preserve all factual details.`;
@@ -346,7 +472,9 @@ Keep service count and why_us count the same as input. Preserve all factual deta
         cta_text: parsed.cta_text || '',
         cta_secondary: parsed.cta_secondary || '',
         about_text: parsed.about_text || '',
-        meta_description: parsed.meta_description || ''
+        meta_description: parsed.meta_description || '',
+        form_helper_text: parsed.form_helper_text || '',
+        location_social_proof: parsed.location_social_proof || ''
       };
     } catch (error) {
       log.warn('Failed to parse optimization response as JSON', { error: error.message });
@@ -358,7 +486,9 @@ Keep service count and why_us count the same as input. Preserve all factual deta
         cta_text: '',
         cta_secondary: '',
         about_text: '',
-        meta_description: ''
+        meta_description: '',
+        form_helper_text: '',
+        location_social_proof: ''
       };
     }
   }

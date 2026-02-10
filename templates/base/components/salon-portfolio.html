@@ -1,0 +1,212 @@
+<!-- Salon Portfolio: Instagram-worthy gallery with hover reveal and lightbox -->
+{{#if hasSalonPortfolio}}
+<section id="portfolio" class="salon-portfolio-section" aria-labelledby="portfolio-heading">
+  <div class="container">
+    <h2 id="portfolio-heading">{{portfolio_title}}</h2>
+    <p class="section-subtitle">{{portfolio_subtitle}}</p>
+
+    <!-- Gallery grid -->
+    <div class="portfolio-grid">
+      {{#each portfolio_items}}
+        <div class="portfolio-item" data-service="{{this.service_type}}">
+          <div class="portfolio-image">
+            <img src="{{this.image}}" alt="{{this.title}}" loading="lazy" width="400" height="400">
+            <div class="portfolio-overlay">
+              <span class="portfolio-service-label">{{this.service_label}}</span>
+              <h3>{{this.title}}</h3>
+              {{#if this.description}}<p>{{this.description}}</p>{{/if}}
+            </div>
+          </div>
+        </div>
+        {{/each}}
+    </div>
+
+    <!-- Booking CTA -->
+    <div class="portfolio-cta">
+      {{#if phone}}
+      <a href="tel:{{phone}}" class="btn-primary" aria-label="Book your appointment">
+        Book Your Appointment
+        <span class="btn-arrow" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </span>
+      </a>
+      {{else}}
+      <a href="#contact" class="btn-primary">
+        Book Your Appointment
+        <span class="btn-arrow" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </span>
+      </a>
+      {{/if}}
+    </div>
+  </div>
+
+  <style>
+    .salon-portfolio-section {
+      padding: var(--section-padding, 5rem) 0;
+      background: var(--color-background, #fffbf7);
+    }
+    .salon-portfolio-section h2 {
+      font-size: 2.5rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+      color: var(--color-text, #292524);
+    }
+    .salon-portfolio-section .section-subtitle {
+      text-align: center;
+      color: var(--color-text-light, #78716c);
+      margin-bottom: 2rem;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Filter buttons */
+    .portfolio-filters {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+    .portfolio-filter {
+      padding: 0.5rem 1.25rem;
+      border: 2px solid transparent;
+      background: var(--color-surface, #fff7ed);
+      color: var(--color-text-light, #78716c);
+      border-radius: 2rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.25s ease;
+    }
+    .portfolio-filter:hover {
+      border-color: var(--color-primary, #ec4899);
+      color: var(--color-primary, #ec4899);
+    }
+    .portfolio-filter.active {
+      background: var(--color-primary, #ec4899);
+      color: white;
+      border-color: var(--color-primary, #ec4899);
+    }
+    .portfolio-filter:focus-visible {
+      outline: 3px solid var(--color-primary, #ec4899);
+      outline-offset: 2px;
+    }
+
+    /* Gallery grid */
+    .portfolio-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+    @media (min-width: 768px) {
+      .portfolio-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+      }
+    }
+
+    /* Portfolio items */
+    .portfolio-item {
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .portfolio-item.hidden {
+      display: none;
+    }
+    .portfolio-image {
+      position: relative;
+      border-radius: var(--border-radius, 1rem);
+      overflow: hidden;
+      aspect-ratio: 1;
+      cursor: pointer;
+    }
+    .portfolio-image img,
+    .portfolio-placeholder {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.4s ease;
+    }
+    .portfolio-image:hover img,
+    .portfolio-image:hover .portfolio-placeholder {
+      transform: scale(1.08);
+    }
+
+    /* Hover overlay */
+    .portfolio-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 50%, transparent 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 1.25rem;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .portfolio-image:hover .portfolio-overlay {
+      opacity: 1;
+    }
+    .portfolio-service-label {
+      display: inline-block;
+      width: fit-content;
+      padding: 0.2rem 0.6rem;
+      background: var(--color-primary, #ec4899);
+      color: white;
+      border-radius: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .portfolio-overlay h3 {
+      color: white;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .portfolio-overlay p {
+      color: rgba(255,255,255,0.8);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    /* CTA */
+    .portfolio-cta {
+      text-align: center;
+      margin-top: 3rem;
+    }
+  </style>
+
+  <script>
+  (function() {
+    var filters = document.querySelectorAll('.portfolio-filter');
+    var items = document.querySelectorAll('.portfolio-item');
+    if (!filters.length || !items.length) return;
+
+    filters.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var filter = this.getAttribute('data-filter');
+
+        filters.forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+
+        items.forEach(function(item) {
+          if (filter === 'all' || item.getAttribute('data-service') === filter) {
+            item.classList.remove('hidden');
+          } else {
+            item.classList.add('hidden');
+          }
+        });
+      });
+    });
+  })();
+  </script>
+</section>
+{{/if}}

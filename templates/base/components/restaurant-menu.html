@@ -1,0 +1,221 @@
+<!-- Restaurant Menu: Elegant categorized menu with dietary indicators -->
+{{#if hasMenuItems}}
+<section id="menu" class="restaurant-menu-section" aria-labelledby="menu-heading">
+  <div class="container">
+    <h2 id="menu-heading">{{menu_title}}</h2>
+    <p class="section-subtitle">{{menu_subtitle}}</p>
+
+    <!-- Menu grid -->
+    <div class="menu-grid">
+      {{#each menu_items}}
+        <div class="menu-item" data-category="{{this.category}}">
+          <div class="menu-item-header">
+            <h3 class="menu-item-name">{{this.name}}</h3>
+            <span class="menu-item-price">{{this.price}}</span>
+          </div>
+          {{#if this.description}}
+          <p class="menu-item-description">{{this.description}}</p>
+          {{/if}}
+          <div class="menu-item-tags">
+            {{#if this.vegetarian}}<span class="diet-tag diet-vegetarian" title="Vegetarian"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2z"/><path d="M12 8v8"/><path d="M8 12h8"/></svg> Vegetarian</span>{{/if}}
+            {{#if this.glutenFree}}<span class="diet-tag diet-gf" title="Gluten Free"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg> GF</span>{{/if}}
+            {{#if this.spicy}}<span class="diet-tag diet-spicy" title="Spicy"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-1 4-4 6-4 10a4 4 0 108 0c0-4-3-6-4-10z"/></svg> Spicy</span>{{/if}}
+          </div>
+        </div>
+        {{/each}}
+    </div>
+
+    <!-- Reservation CTA -->
+    <div class="menu-cta">
+      {{#if phone}}
+      <a href="tel:{{phone}}" class="btn-primary" aria-label="Make a reservation">
+        Reserve a Table
+        <span class="btn-arrow" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </span>
+      </a>
+      {{else}}
+      <a href="#contact" class="btn-primary">
+        Reserve a Table
+        <span class="btn-arrow" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </span>
+      </a>
+      {{/if}}
+    </div>
+  </div>
+
+  <style>
+    .restaurant-menu-section {
+      padding: var(--section-padding, 5rem) 0;
+      background: var(--color-background, #fffbf7);
+    }
+    .restaurant-menu-section h2 {
+      font-size: 2.5rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+      color: var(--color-text, #292524);
+    }
+    .restaurant-menu-section .section-subtitle {
+      text-align: center;
+      color: var(--color-text-light, #78716c);
+      margin-bottom: 2rem;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Tab navigation */
+    .menu-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 3rem;
+      flex-wrap: wrap;
+    }
+    .menu-tab {
+      padding: 0.6rem 1.5rem;
+      border: 2px solid var(--color-primary, #ea580c);
+      background: transparent;
+      color: var(--color-primary, #ea580c);
+      border-radius: 2rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: all 0.25s ease;
+    }
+    .menu-tab:hover,
+    .menu-tab.active {
+      background: var(--color-primary, #ea580c);
+      color: white;
+    }
+    .menu-tab:focus-visible {
+      outline: 3px solid var(--color-primary, #ea580c);
+      outline-offset: 2px;
+    }
+
+    /* Menu grid */
+    .menu-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    @media (min-width: 640px) {
+      .menu-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+      }
+    }
+
+    /* Menu item cards */
+    .menu-item {
+      padding: 1.5rem;
+      border-radius: var(--border-radius, 1rem);
+      background: var(--color-surface, #fff7ed);
+      border: 1px solid rgba(0,0,0,0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .menu-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    .menu-item.hidden {
+      display: none;
+    }
+    .menu-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .menu-item-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--color-text, #292524);
+      line-height: 1.3;
+    }
+    .menu-item-price {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--color-primary, #ea580c);
+      white-space: nowrap;
+    }
+    .menu-item-description {
+      font-size: 0.9rem;
+      color: var(--color-text-light, #78716c);
+      line-height: 1.5;
+      margin-bottom: 0.75rem;
+    }
+
+    /* Dietary tags */
+    .menu-item-tags {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .diet-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .diet-vegetarian {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .diet-gf {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .diet-spicy {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    /* CTA */
+    .menu-cta {
+      text-align: center;
+      margin-top: 3rem;
+    }
+  </style>
+
+  <script>
+  (function() {
+    var tabs = document.querySelectorAll('.menu-tab');
+    var items = document.querySelectorAll('.menu-item');
+    if (!tabs.length || !items.length) return;
+
+    tabs.forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        var category = this.getAttribute('data-category');
+
+        tabs.forEach(function(t) {
+          t.classList.remove('active');
+          t.setAttribute('aria-selected', 'false');
+        });
+        this.classList.add('active');
+        this.setAttribute('aria-selected', 'true');
+
+        items.forEach(function(item) {
+          if (item.getAttribute('data-category') === category) {
+            item.classList.remove('hidden');
+          } else {
+            item.classList.add('hidden');
+          }
+        });
+      });
+    });
+
+    /* Show appetizers by default */
+    tabs[0].click();
+  })();
+  </script>
+</section>
+{{/if}}
